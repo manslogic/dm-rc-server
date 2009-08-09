@@ -16,9 +16,7 @@ uses
   dmtest_pluginImpl in 'dmtest_pluginImpl.pas',
   DMPluginIntf in 'DMPluginIntf.pas',
   splitfns in 'splitfns.pas',
-  DM_RC_Svr_Form in 'DM_RC_Svr_Form.pas' {CfgForm},
-  DM_RC_Svr_Defines in 'DM_RC_Svr_Defines.pas',
-  DM_RC_Svr_Sockets in 'DM_RC_Svr_Sockets.pas';
+  DM_RC_Svr_Form in 'DM_RC_Svr_Form.pas' {CfgForm};
 
 {$R *.res}
 function RegisterPlugIn: IDMPlugIn; stdcall;

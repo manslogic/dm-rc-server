@@ -64,8 +64,7 @@ implementation
 
 uses
  SysUtils,
- DM_RC_Svr_Defines,
- DM_RC_Svr_Form;
+ DM_RC_Svr_Defines;
 
 //------------------------------------------------------------------------------
 function TDMTestPlugIn.GetName: WideString;//получаем инфу о плагине
@@ -217,9 +216,6 @@ procedure TDMTestPlugIn.BeforeUnload;
 begin
   myIDmInterface := nil;
 
-  //
-  if Assigned(CfgForm) then
-    FreeAndNil(CfgForm);
   //убиваем ини файл
   FreeAndNil(Ini);
   //убиваем сервер
@@ -228,11 +224,7 @@ end;
 //------------------------------------------------------------------------------
 procedure TDMTestPlugIn.PluginConfigure(params: WideString);//вызов окна конфигурации плагина
 begin
- if not Assigned(CfgForm) then
-  begin
-   CfgForm:=TCfgForm.Create(nil);
-  end;
- CfgForm.Show;
+//
 end;
 //------------------------------------------------------------------------------
 function TDMTestPlugIn.EventRaised(eventType: WideString; eventData: WideString): WideString;//вызывается из ДМ-ма при возникновении какого либо события
