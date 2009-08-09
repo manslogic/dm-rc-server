@@ -18,7 +18,10 @@ uses
   splitfns in 'splitfns.pas',
   DM_RC_Svr_Form in 'DM_RC_Svr_Form.pas' {CfgForm},
   DM_RC_Svr_Defines in 'DM_RC_Svr_Defines.pas',
-  DM_RC_Svr_Sockets in 'DM_RC_Svr_Sockets.pas';
+  DM_RC_Svr_Sockets in 'DM_RC_Svr_Sockets.pas',
+  DM_RC_Svr_Settings in 'DM_RC_Svr_Settings.pas',
+  StringsSettings in 'StringsSettings.pas',
+  Tokens in 'Tokens.pas';
 
 {$R *.res}
 function RegisterPlugIn: IDMPlugIn; stdcall;

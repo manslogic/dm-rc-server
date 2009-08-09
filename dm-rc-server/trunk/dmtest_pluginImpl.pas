@@ -6,8 +6,7 @@ uses
   DMPluginIntf, Classes, Dialogs,
   StrUtils, splitfns,
   OverbyteIcsWSocketS,
-  DM_RC_Svr_Sockets,
-  IniFiles;
+  DM_RC_Svr_Sockets;
 const
   //укажите здесь информацию о своем плагине
   myPluginID = '{F78D5E99-7CC4-4E5C-8839-50BEEF99884D}';//обязательно укажите свой уникальный номер плагина (используйте Ctrl+Shift+G для генерации)
@@ -25,7 +24,10 @@ type
   TDMTestPlugIn = class(TInterfacedObject, IDMPlugIn)
     private
       myIDmInterface: IDmInterface;
-      Ini: TMemIniFile;
+      //
+      procedure DefineSettings;
+      function LoadSettings: Boolean;
+      procedure SaveSettings;
     protected
 
     public
@@ -64,7 +66,11 @@ implementation
 
 uses
  SysUtils,
+ Variants,
+ Controls,
+ StringsSettings,
  DM_RC_Svr_Defines,
+ DM_RC_Svr_Settings,
  DM_RC_Svr_Form;
 
 //------------------------------------------------------------------------------
@@ -167,7 +173,7 @@ begin
     [DownloadId + #13,
      GetStringBetween(Result, '<url>', '</url>') + #13,
      GetStringBetween(Result, '<saveto>', '</saveto>') + #13,
-     Ini.ReadString('State', GetStringBetween(Result, '<state>', '</state>'), ''),
+     //Ini.ReadString('State', GetStringBetween(Result, '<state>', '</state>'), ''),
      GetStringBetween(Result, '<downloadedsize>', '</downloadedsize>'),
      GetStringBetween(Result, '<size>', '</size>'),
      GetStringBetween(Result, '<speed>', '</speed>')]) + #13;
@@ -178,8 +184,8 @@ begin
   Result := myIDmInterface.DoAction('GetDownloadInfoByID', DownloadId);
   Result := Format('ID: %s, URL: %s, State: %s',
     [DownloadId,
-     GetStringBetween(Result, '<url>', '</url>'),
-     Ini.ReadString('State', GetStringBetween(Result, '<state>', '</state>'), '')]) + #13;
+     GetStringBetween(Result, '<url>', '</url>'){,
+     Ini.ReadString('State', GetStringBetween(Result, '<state>', '</state>'), '')}]) + #13;
 end;
 //------------------------------------------------------------------------------
 procedure TDMTestPlugIn.ClientConnect(Sender: TObject;
@@ -198,32 +204,24 @@ begin
 
   //получаем папку с плагинами
   PluginsPath:=IncludeTrailingPathDelimiter(myIDmInterface.DoAction('GetPluginDir', ''));
-
-  //читаем ини файл
-  Ini := TMemIniFile.Create(PluginsPath + IniFileName);
-
+  //создаём настройки
+  DefineSettings;
+  //читаем настройки
+  if not LoadSettings then
+    PluginConfigure(sNoCancel);
   //создаем сервер и запускаем его
-  WSocketServer := TWSocketServer.Create(nil);
-  WSocketServer.OnClientConnect := ClientConnect;
-  WSocketServer.Banner          := 'Welcome to Download Master Remote Control Server';
-  WSocketServer.Proto           := 'tcp';         { Use TCP protocol  }
-  WSocketServer.Port            := Ini.ReadString('Connect', 'Port', '10000');
-  WSocketServer.Addr            := Ini.ReadString('Connect', 'Addr', '127.0.0.1');
-  WSocketServer.ClientClass     := TWSocketClient;{ Use our component }
-  WSocketServer.Listen;                           { Start litening    }
+  SocketServerStart(ClientConnect);
 end;
 //------------------------------------------------------------------------------
 procedure TDMTestPlugIn.BeforeUnload;
 begin
   myIDmInterface := nil;
-
-  //
-  if Assigned(CfgForm) then
-    FreeAndNil(CfgForm);
-  //убиваем ини файл
-  FreeAndNil(Ini);
+  //убиваем настройки
+  SettingsFree;
+  //убиваем форму (на всякий случай)
+  CfgFormFree;
   //убиваем сервер
-  FreeAndNil(WSocketServer);
+  SocketServerFree;
 end;
 //------------------------------------------------------------------------------
 procedure TDMTestPlugIn.PluginConfigure(params: WideString);//вызов окна конфигурации плагина
@@ -232,7 +230,20 @@ begin
   begin
    CfgForm:=TCfgForm.Create(nil);
   end;
- CfgForm.Show;
+ CfgForm.Settings:=Settings;
+ if params=sNoCancel then
+  begin
+   CfgForm.BitBtn2.Enabled:=false;
+   if CfgForm.ShowModal=mrOK then
+    begin
+     Settings.Clear;
+     Settings.AddStrings(CfgForm.Settings);
+     SaveSettings;
+    end;
+   FreeAndNil(CfgForm);
+  end
+ else
+   CfgForm.Show;
 end;
 //------------------------------------------------------------------------------
 function TDMTestPlugIn.EventRaised(eventType: WideString; eventData: WideString): WideString;//вызывается из ДМ-ма при возникновении какого либо события
@@ -244,9 +255,30 @@ begin
   ID       := copy(eventData, 0, IndStart-1);
   State    := copy(eventData, IndStart+1, length(eventData));
 
+  if eventType = 'dm_timer_5' then
+   begin
+    //проверяем форму на то, что она есть, но закрыта
+    if Assigned(CfgForm) then
+     begin
+      if not CfgForm.Showing then
+       begin
+        //читаем настройки из формы и убиваем её
+        if CfgForm.ModalResult=mrOK then
+         begin
+          Settings.Clear;
+          Settings.AddStrings(CfgForm.Settings);
+          SaveSettings;
+         end;
+        FreeAndNil(CfgForm);
+       end;
+     end;
+   end;
+
   if AnsiStartsText('dm_download', eventType) then
+   {
     TranslateMsg(Ini.ReadString('Events', eventType, eventType) + ' ' + ID + ' ' +
       Ini.ReadString('State', State, State));
+    }
 end;
 //------------------------------------------------------------------------------
 function TDMTestPlugIn.GetEmail: WideString;//получаем инфу о плагине
@@ -268,6 +300,26 @@ function TDMTestPlugIn.GetMinAppVersion: WideString;//получаем минимальную верси
 begin
   Result:= myMinNeedAppVersion;
 end;
+//------------------------------------------------------------------------------
+procedure TDMTestPlugIn.DefineSettings;
+begin
+ SettingsFree;
+ Settings:=TStringsSettings.Create;
+ Settings.AddAnyValue(sConnection, varInteger, iConnLocal, iConnLocal, iConnRemote, sSettings);
+ Settings.AddAnyValue(sPort, varWord, Port_Default, 0, MaxWord, sSettings);
+ Settings.AddGroup(sIPList, 0, 100, varString, '', Null, Null, sSettings, sIPList);
+end;
+//------------------------------------------------------------------------------
+function TDMTestPlugIn.LoadSettings: Boolean;
+begin
+ Result:=Settings.LoadValuesFromIni(PluginsPath+IniFIleName)=vreOK;
+end;
+//------------------------------------------------------------------------------
+procedure TDMTestPlugIn.SaveSettings;
+begin
+ Settings.SaveValuesToIni(PluginsPath+IniFIleName);
+end;
+//------------------------------------------------------------------------------
 
 
 
