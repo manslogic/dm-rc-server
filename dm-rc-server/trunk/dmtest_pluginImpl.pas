@@ -3,7 +3,8 @@ unit dmtest_pluginImpl;
 interface
 
 uses
-  DMPluginIntf, Classes, Dialogs,
+  DMPluginIntf, Classes,
+  Controls,
   StrUtils, splitfns,
   OverbyteIcsWSocketS,
   DM_RC_Svr_Sockets;
@@ -28,6 +29,7 @@ type
       procedure DefineSettings;
       function LoadSettings: Boolean;
       procedure SaveSettings;
+      procedure FormClosed(ModalResult: TModalResult = mrNone);
     protected
 
     public
@@ -55,23 +57,29 @@ type
       procedure ClientConnect(Sender: TObject; Client: TWSocketClient; Error: Word);//подключился клиент
       procedure TranslateMsg(const Msg: string);//передаем сообщения всем подключенным клиентам
       procedure DoAction(const Cmd, Params: string);//обработка комманд
-      function GetInfo(DownloadId: string): string;
-      function GetShortInfo(DownloadId: string): string;
+      //function GetInfo(DownloadId: string): string;
+      //function GetShortInfo(DownloadId: string): string;
+      //
+      procedure UpdateDLInfo(Mode: Integer = 3); //обновление списка данных закачек
+      procedure ProcessSingleCommand(Command: String); //обработка одной строки-команды
     published
   end;
-  
+
   //TState = (dsPause, dsPausing, dsDownloaded, dsDownloading, dsError, dsErroring, dsQueue);
 
 implementation
 
 uses
+ Windows,
  SysUtils,
  Variants,
- Controls,
  StringsSettings,
+ DMAPI,
  DM_RC_Svr_Defines,
  DM_RC_Svr_Settings,
- DM_RC_Svr_Form;
+ DM_RC_Svr_Form,
+ DM_RC_Svr_Commands,
+ Wizard;
 
 //------------------------------------------------------------------------------
 function TDMTestPlugIn.GetName: WideString;//получаем инфу о плагине
@@ -109,10 +117,11 @@ procedure TDMTestPlugIn.ClientDataAvailable(Sender: TObject; Error: Word);
 var
   RcvdLine: string;
   IndStart: integer;
-  Cmd, Params: string;
+  //Cmd, Params: string;
 begin
   with Sender as TWSocketClient do
   begin
+    (*
     { We use line mode. We will receive complete lines }
     RcvdLine := ReceiveStr;
     { Remove trailing CR/LF }
@@ -129,7 +138,29 @@ begin
 
     //RcvdLine := myIDmInterface.DoAction(Cmd, Params);
     //if Length(RcvdLine) > 0 then TranslateMsg(RcvdLine);
+    *)
+    RcvdLine := ReceiveStr;
+    for IndStart:=1 to WordCount(RcvdLine, CRLFSet) do
+      ProcessSingleCommand(ExtractWord(IndStart, RcvdLine, CRLFSet));
   end;
+end;
+//------------------------------------------------------------------------------
+procedure TDMTestPlugIn.ProcessSingleCommand(Command: String);
+ var
+  Cmd, Params: string;
+begin
+ //TODO: add HTML processing
+
+ //process [almost] standard command
+ Cmd:=ExtractWord(1, Command, SPCSet);
+ if DefaultActions.IndexOf(Cmd)>=0 then
+  begin
+   Params:=Trim(Copy(Command, Pos(Cmd, Command)+Length(Cmd), Length(Command)));
+   DoAction(Cmd, Params);
+  end;
+ if SameText(Cmd, 'help') then
+   DoAction(Cmd, '');
+ //process external commands
 end;
 //------------------------------------------------------------------------------
 procedure TDMTestPlugIn.DoAction(const Cmd, Params: string);
@@ -138,19 +169,19 @@ var
   Lst: TStringList;
   i: integer;
 begin
-  if CompareText(Cmd, 'help') = 0 then
+  if SameText(Cmd, 'help') then
     TranslateMsg('Расширенные комманды: starturl <url>, addurl <url>, ls [State], start <ID>, stop <ID>, info <ID>; Остальные комманды стандартные')
-  else if CompareText(Cmd, 'starturl') = 0 then
+  else if SameText(Cmd, 'starturl') then
     Answer := myIDmInterface.DoAction('AddingURL', '<url>' + Params +
       '</url> <hidden>1</hidden>')
-  else if CompareText(Cmd, 'addurl') = 0 then
+  else if SameText(Cmd, 'addurl') then
     Answer := myIDmInterface.DoAction('AddingURL', '<url>' + Params +
       '</url> <hidden>1</hidden> <start>0</start>')
-  else if CompareText(Cmd, 'start') = 0 then
+  else if SameText(Cmd, 'start') then
     Answer := myIDmInterface.DoAction('StartDownloads', Params)
-  else if CompareText(Cmd, 'stop') = 0 then
+  else if SameText(Cmd, 'stop') then
     Answer := myIDmInterface.DoAction('StopDownloads', Params)
-  else if CompareText(Cmd, 'ls') = 0 then
+  {else if SameText(Cmd, 'ls') then
   begin
     Answer := myIDmInterface.DoAction('GetDownloadIDsList', Params);
     Lst    := TStringList.Create;
@@ -158,13 +189,15 @@ begin
     for i := 0 to Lst.Count - 1 do Lst[i] := GetShortInfo(Lst[i]);
     Answer := Lst.Text;
     Lst.Free;
-  end else if CompareText(Cmd, 'info') = 0 then
+  end else if SameText(Cmd, 'info') then
     Answer := GetInfo(Params)
+  }
   else
     Answer := myIDmInterface.DoAction(Cmd, Params);
 
   if Length(Answer) > 0 then TranslateMsg(Answer);
 end;
+(*
 //------------------------------------------------------------------------------
 function TDMTestPlugIn.GetInfo(DownloadId: string): string;
 begin
@@ -187,6 +220,7 @@ begin
      GetStringBetween(Result, '<url>', '</url>'){,
      Ini.ReadString('State', GetStringBetween(Result, '<state>', '</state>'), '')}]) + #13;
 end;
+*)
 //------------------------------------------------------------------------------
 procedure TDMTestPlugIn.ClientConnect(Sender: TObject;
   Client: TWSocketClient; Error: Word);
@@ -209,6 +243,9 @@ begin
   //читаем настройки
   if not LoadSettings then
     PluginConfigure(sNoCancel);
+  //создаем мутексы
+  DLInfoMutexCreate;
+  CommandsMutexCreate;
   //создаем сервер и запускаем его
   SocketServerStart(ClientConnect);
 end;
@@ -216,10 +253,15 @@ end;
 procedure TDMTestPlugIn.BeforeUnload;
 begin
   myIDmInterface := nil;
-  //убиваем настройки
-  SettingsFree;
   //убиваем форму (на всякий случай)
   CfgFormFree;
+  //убиваем инфо закачек
+  DLInfoFree;
+  //убиваем мутексы
+  DLInfoMutexFree;
+  CommandsMutexFree;
+  //убиваем настройки
+  SettingsFree;
   //убиваем сервер
   SocketServerFree;
 end;
@@ -234,13 +276,7 @@ begin
  if params=sNoCancel then
   begin
    CfgForm.BitBtn2.Enabled:=false;
-   if CfgForm.ShowModal=mrOK then
-    begin
-     Settings.Clear;
-     Settings.AddStrings(CfgForm.Settings);
-     SaveSettings;
-    end;
-   FreeAndNil(CfgForm);
+   FormClosed(CfgForm.ShowModal);
   end
  else
    CfgForm.Show;
@@ -261,16 +297,8 @@ begin
     if Assigned(CfgForm) then
      begin
       if not CfgForm.Showing then
-       begin
         //читаем настройки из формы и убиваем её
-        if CfgForm.ModalResult=mrOK then
-         begin
-          Settings.Clear;
-          Settings.AddStrings(CfgForm.Settings);
-          SaveSettings;
-         end;
-        FreeAndNil(CfgForm);
-       end;
+        FormClosed(CfgForm.ModalResult);
      end;
    end;
 
@@ -317,7 +345,47 @@ end;
 //------------------------------------------------------------------------------
 procedure TDMTestPlugIn.SaveSettings;
 begin
- Settings.SaveValuesToIni(PluginsPath+IniFIleName);
+ Settings.SaveValuesToIni(PluginsPath+IniFileName);
+end;
+//------------------------------------------------------------------------------
+procedure TDMTestPlugIn.FormClosed(ModalResult: TModalResult = mrNone);
+begin
+ if Assigned(CfgForm) then
+  begin
+   if ModalResult=mrOK then
+    begin
+     Settings.Clear;
+     Settings.AddStrings(CfgForm.Settings);
+     SaveSettings;
+    end;
+   FreeAndNil(CfgForm);
+  end;
+end;
+//------------------------------------------------------------------------------
+procedure TDMTestPlugIn.UpdateDLInfo(Mode: Integer = 3);
+ var
+  i: Integer;
+  s, ID, IDI: String;
+begin
+ if Mode=dsAll then
+   s:=myIDmInterface.DoAction('GetDownloadIDsList', '')
+ else
+   s:=myIDmInterface.DoAction('GetDownloadIDsList', IntToStr(Mode));
+ if s<>'' then
+  begin
+   WaitForSingleObject(Mutex_DLInfo, INFINITE);
+   DLInfo.Clear;
+   for i:=1 to WordCount(s, [' ']) do
+    begin
+     ID:=ExtractWord(i, s, [' ']);
+     if ID<>'' then
+      begin
+       IDI:=myIDmInterface.DoAction('GetDownloadInfoByID', ID);
+       DLInfo.Add(ID+'='+IDI);
+      end;
+    end;
+   ReleaseMutex(Mutex_DLInfo);
+  end;
 end;
 //------------------------------------------------------------------------------
 

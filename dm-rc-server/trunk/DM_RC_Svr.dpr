@@ -21,7 +21,11 @@ uses
   DM_RC_Svr_Sockets in 'DM_RC_Svr_Sockets.pas',
   DM_RC_Svr_Settings in 'DM_RC_Svr_Settings.pas',
   StringsSettings in 'StringsSettings.pas',
-  Tokens in 'Tokens.pas';
+  Tokens in 'Tokens.pas',
+  DM_RC_Svr_Commands in 'DM_RC_Svr_Commands.pas',
+  Wizard in 'WIZARD.PAS',
+  DMSettings in 'DMSettings.pas',
+  DMAPI in 'DMAPI.pas';
 
 {$R *.res}
 function RegisterPlugIn: IDMPlugIn; stdcall;

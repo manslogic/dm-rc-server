@@ -15,7 +15,7 @@ implementation
 uses
  SysUtils;
 
- {Common stuff}
+{ Common stuff }
 
 procedure SettingsFree;
 begin

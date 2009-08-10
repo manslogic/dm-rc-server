@@ -37,7 +37,8 @@ begin
  case Settings[sConnection] of
   iConnRemote:
    begin
-    //
+    if Settings[sIPList]>0 then
+      WSocketServer.Addr:=Settings.Group[sIPList, 0];
    end;
   else
     WSocketServer.Addr:='127.0.0.1';
