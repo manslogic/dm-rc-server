@@ -8,6 +8,7 @@ uses
 
 type
  TUpdateDLInfoProc = procedure (Mode: Integer = 3) of object;
+ TDoActionFunc = function(const Cmd, Param: String): String of object;
 
 const
  CRLF = #13#10;
@@ -20,15 +21,22 @@ const
 
  Port_Default: Word = 10000;
 
+ //
+ tknCmd = 'cmd';
+ tknParam = 'prm';
+
  //settings
  sSettings = 'Settings';
  sConnection = 'Connection';
- sPort = 'Port';
+ sPortLoc = 'PortLocal';
+ sPortRem = 'PortRemote';
+ sPortExt = 'PortExternal';
  sIPList = 'IPList';
 
  //
- iConnLocal = 0;
- iConnRemote = 1;
+ iConnLocal = $0001;
+ iConnRemote = $0002;
+ iConnExternal = $0004;
 
  //No cansel form option
  sNoCancel = 'NOCANCEL';

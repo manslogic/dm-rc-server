@@ -25,7 +25,9 @@ uses
   DM_RC_Svr_Commands in 'DM_RC_Svr_Commands.pas',
   Wizard in 'WIZARD.PAS',
   DMSettings in 'DMSettings.pas',
-  DMAPI in 'DMAPI.pas';
+  DMAPI in 'DMAPI.pas',
+  DM_RC_Svr_ExternalIP in 'DM_RC_Svr_ExternalIP.pas',
+  DM_RC_Svr_Tokens in 'DM_RC_Svr_Tokens.pas';
 
 {$R *.res}
 function RegisterPlugIn: IDMPlugIn; stdcall;

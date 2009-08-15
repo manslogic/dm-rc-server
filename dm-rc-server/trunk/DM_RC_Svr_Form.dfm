@@ -822,64 +822,191 @@ object CfgForm: TCfgForm
         Height = 13
         Caption = 'Connected'
       end
-      object RG1: TRadioGroup
-        Left = 0
-        Top = 0
-        Width = 81
-        Height = 49
-        Caption = ' Connection '
-        ItemIndex = 0
-        Items.Strings = (
-          'Local'
-          'Remote')
-        TabOrder = 0
-        OnClick = RG1Click
-      end
       object Button1: TButton
         Left = 0
-        Top = 144
-        Width = 161
+        Top = 200
+        Width = 145
         Height = 25
         Caption = 'Get Local IP List'
         Enabled = False
-        TabOrder = 1
+        TabOrder = 0
         OnClick = Button1Click
-      end
-      object LE_Port: TLabeledEdit
-        Left = 88
-        Top = 24
-        Width = 73
-        Height = 21
-        EditLabel.Width = 19
-        EditLabel.Height = 13
-        EditLabel.Caption = 'Port'
-        TabOrder = 2
       end
       object LB_Connected: TListBox
         Left = 168
         Top = 16
         Width = 145
-        Height = 121
+        Height = 137
         ItemHeight = 13
-        TabOrder = 3
+        TabOrder = 1
       end
       object Button2: TButton
         Left = 200
-        Top = 144
+        Top = 160
         Width = 75
         Height = 25
         Caption = 'Refresh'
-        TabOrder = 4
+        TabOrder = 2
         OnClick = Button2Click
       end
       object CLB_IP: TCheckListBox
         Left = 0
-        Top = 56
-        Width = 161
+        Top = 112
+        Width = 145
         Height = 81
         Enabled = False
         ItemHeight = 13
+        TabOrder = 3
+      end
+      object GB_Conn: TGroupBox
+        Left = 0
+        Top = 0
+        Width = 145
+        Height = 113
+        Caption = ' Connection and Port '
+        TabOrder = 4
+        object Label2: TLabel
+          Left = 8
+          Top = 88
+          Width = 44
+          Height = 13
+          Caption = 'No IP yet'
+          Enabled = False
+        end
+        object E_PortLoc: TEdit
+          Left = 96
+          Top = 16
+          Width = 41
+          Height = 21
+          TabOrder = 0
+          Text = '10000'
+        end
+        object CB_PortLoc: TCheckBox
+          Left = 8
+          Top = 18
+          Width = 81
+          Height = 17
+          Caption = 'Local'
+          TabOrder = 1
+        end
+        object CB_PortRem: TCheckBox
+          Left = 8
+          Top = 42
+          Width = 81
+          Height = 17
+          Caption = 'Remote'
+          TabOrder = 2
+        end
+        object E_PortRem: TEdit
+          Left = 96
+          Top = 40
+          Width = 41
+          Height = 21
+          TabOrder = 3
+          Text = '10000'
+        end
+        object E_PortExt: TEdit
+          Left = 96
+          Top = 64
+          Width = 41
+          Height = 21
+          TabOrder = 4
+          Text = '10000'
+        end
+        object CB_PortExt: TCheckBox
+          Left = 8
+          Top = 66
+          Width = 81
+          Height = 17
+          Caption = 'External'
+          TabOrder = 5
+          OnClick = CB_PortExtClick
+        end
+        object Button3: TButton
+          Left = 96
+          Top = 88
+          Width = 41
+          Height = 17
+          Caption = 'Get IP'
+          Enabled = False
+          TabOrder = 6
+          OnClick = Button3Click
+        end
+      end
+    end
+    object TS2: TTabSheet
+      Caption = 'External IP'
+      ImageIndex = 1
+      object EIP_URL: TLabeledEdit
+        Left = 0
+        Top = 16
+        Width = 153
+        Height = 21
+        EditLabel.Width = 45
+        EditLabel.Height = 13
+        EditLabel.Caption = 'EIP_URL'
+        TabOrder = 0
+      end
+      object EIP_Prefix: TLabeledEdit
+        Left = 160
+        Top = 16
+        Width = 153
+        Height = 21
+        EditLabel.Width = 49
+        EditLabel.Height = 13
+        EditLabel.Caption = 'EIP_Prefix'
+        TabOrder = 1
+      end
+      object EIP_Proxy: TLabeledEdit
+        Left = 0
+        Top = 56
+        Width = 153
+        Height = 21
+        EditLabel.Width = 49
+        EditLabel.Height = 13
+        EditLabel.Caption = 'EIP_Proxy'
+        TabOrder = 2
+      end
+      object EIP_Port: TLabeledEdit
+        Left = 160
+        Top = 56
+        Width = 153
+        Height = 21
+        EditLabel.Width = 42
+        EditLabel.Height = 13
+        EditLabel.Caption = 'EIP_Port'
+        TabOrder = 3
+      end
+      object EIP_Auth: TCheckBox
+        Left = 0
+        Top = 80
+        Width = 313
+        Height = 17
+        Caption = 'Authentication'
+        TabOrder = 4
+        OnClick = EIP_AuthClick
+      end
+      object EIP_User: TLabeledEdit
+        Left = 0
+        Top = 112
+        Width = 153
+        Height = 21
+        EditLabel.Width = 45
+        EditLabel.Height = 13
+        EditLabel.Caption = 'EIP_User'
+        Enabled = False
         TabOrder = 5
+      end
+      object EIP_Pass: TLabeledEdit
+        Left = 160
+        Top = 112
+        Width = 153
+        Height = 21
+        EditLabel.Width = 46
+        EditLabel.Height = 13
+        EditLabel.Caption = 'EIP_Pass'
+        Enabled = False
+        TabOrder = 6
       end
     end
   end

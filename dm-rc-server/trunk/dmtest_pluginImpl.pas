@@ -5,7 +5,7 @@ interface
 uses
   DMPluginIntf, Classes,
   Controls,
-  StrUtils, splitfns,
+  StrUtils, //splitfns,
   OverbyteIcsWSocketS,
   DM_RC_Svr_Sockets;
 const
@@ -30,6 +30,8 @@ type
       function LoadSettings: Boolean;
       procedure SaveSettings;
       procedure FormClosed(ModalResult: TModalResult = mrNone);
+      procedure DoServers;
+      procedure SettingsReady;
     protected
 
     public
@@ -55,13 +57,15 @@ type
       //------
       procedure ClientDataAvailable(Sender: TObject; Error: Word);//получили информацию от клиента
       procedure ClientConnect(Sender: TObject; Client: TWSocketClient; Error: Word);//подключился клиент
-      procedure TranslateMsg(const Msg: string);//передаем сообщения всем подключенным клиентам
-      procedure DoAction(const Cmd, Params: string);//обработка комманд
+      //procedure TranslateMsg(const Owner, Msg: string);//передаем сообщения всем подключенным клиентам
+      //procedure DoAction(const Owner, Cmd, Params: string);//обработка комманд
       //function GetInfo(DownloadId: string): string;
       //function GetShortInfo(DownloadId: string): string;
       //
       procedure UpdateDLInfo(Mode: Integer = 3); //обновление списка данных закачек
-      procedure ProcessSingleCommand(Command: String); //обработка одной строки-команды
+      //команда кодирована как <srv>сервер</srv><cli>адрес клиента</cli><cmd>команда</cmd>
+      //procedure ProcessSingleCommand(Command: String); //обработка одной строки-команды
+      function DoAnyAction(const Cmd, Params: String): String;
     published
   end;
 
@@ -79,6 +83,9 @@ uses
  DM_RC_Svr_Settings,
  DM_RC_Svr_Form,
  DM_RC_Svr_Commands,
+ DM_RC_Svr_Tokens,
+ DM_RC_Svr_ExternalIP,
+ Tokens,
  Wizard;
 
 //------------------------------------------------------------------------------
@@ -104,20 +111,32 @@ function TDMTestPlugIn.getID: WideString; stdcall;
 begin
   Result:= myPluginID;
 end;
+(*
 //------------------------------------------------------------------------------
-procedure TDMTestPlugIn.TranslateMsg(const Msg: string);
+procedure TDMTestPlugIn.TranslateMsg(const Owner, Msg: string);
+{
 var
   i: integer;
+}
 begin
-  for i := 0 to WSocketServer.ClientCount - 1 do
-    (WSocketServer.Client[i] As TWSocketClient).SendStr(Msg + #13#10);
+ {
+ if Assigned(WSS) then
+  for i := 0 to WSS.ClientCount - 1 do
+    (WSS.Client[i] As TWSocketClient).SendStr(Msg + CRLF);
+ }
+ //put message to send queue
+ AddToSendQueue(Owner, Msg);
+ //start sending thread
+ SendThreadResume;
 end;
+*)
 //------------------------------------------------------------------------------
 procedure TDMTestPlugIn.ClientDataAvailable(Sender: TObject; Error: Word);
 var
   RcvdLine: string;
   IndStart: integer;
   //Cmd, Params: string;
+  Srv, Cli: String;
 begin
   with Sender as TWSocketClient do
   begin
@@ -140,37 +159,69 @@ begin
     //if Length(RcvdLine) > 0 then TranslateMsg(RcvdLine);
     *)
     RcvdLine := ReceiveStr;
+    //MessageBox(0, PChar('['+RcvdLine+']'), myPluginName, MB_OK or MB_ICONINFORMATION); //debug
+    //Cli := PeerAddr;
+    Cli := IntToStr(ClientIndex(Server as TWSocketServer, Sender as TWSocketClient));
+    Srv := '';
+    if (Server as TWSocketServer) = WSSLocal then
+      Srv := sSrvLoc;
+    if (Server as TWSocketServer) = WSSRemote then
+      Srv := sSrvRem;
+    if (Server as TWSocketServer) = WSSExternal then
+      Srv := sSrvExt;
+    //MessageBox(0, PChar(Srv+' '+Cli), myPluginName, MB_OK or MB_ICONINFORMATION); //debug
     for IndStart:=1 to WordCount(RcvdLine, CRLFSet) do
-      ProcessSingleCommand(ExtractWord(IndStart, RcvdLine, CRLFSet));
+     begin
+      //ProcessSingleCommand(EncodeToken(tknSrv, Srv)+EncodeToken(tknCli, Cli)+EncodeToken(tknCmd, ExtractWord(IndStart, RcvdLine, CRLFSet)));
+      AddToIncomingQueue(EncodeToken(tknSrv, Srv)+EncodeToken(tknCli, Cli), ExtractWord(IndStart, RcvdLine, CRLFSet));
+      IncomingThreadResume;
+     end;
   end;
 end;
+(*
 //------------------------------------------------------------------------------
 procedure TDMTestPlugIn.ProcessSingleCommand(Command: String);
  var
-  Cmd, Params: string;
+  Owner, CmdText, CmdWord, Cmd, Params: string;
 begin
+ Owner:=CopyToken(tknSrv, Command)+CopyToken(tknCli, Command);
+ CmdText:=ExtractToken(tknCmd, Command);
  //TODO: add HTML processing
 
  //process [almost] standard command
- Cmd:=ExtractWord(1, Command, SPCSet);
+ Cmd:=ExtractWord(1, CmdText, SPCSet);
+ //MessageBox(0, PChar('['+Cmd+']'), myPluginName, MB_OK or MB_ICONINFORMATION); //debug
+ if Cmd='GET' then
+  begin
+   //browser in air!
+   Owner:=Owner+EncodeToken(tknCls, '1');
+   CmdWord:=ExtractWord(2, CmdText, SPCSet);
+   Cmd:=Copy(CmdWord, 2, Length(CmdWord));
+   if Cmd='' then
+     Cmd:=cmdSendBanner;
+  end;
+ MessageBox(0, PChar(Owner+' '+Cmd), myPluginName, MB_OK or MB_ICONQUESTION); //debug
  if DefaultActions.IndexOf(Cmd)>=0 then
   begin
-   Params:=Trim(Copy(Command, Pos(Cmd, Command)+Length(Cmd), Length(Command)));
-   DoAction(Cmd, Params);
+   Params:=Trim(Copy(CmdText, Pos(Cmd, CmdText)+Length(Cmd), Length(CmdText)));
+   DoAction(Owner, Cmd, Params);
   end;
- if SameText(Cmd, 'help') then
-   DoAction(Cmd, '');
+ if SameText(Cmd, 'help') or SameText(Cmd, cmdSendBanner) then
+   DoAction(Owner, Cmd, '');
  //process external commands
 end;
 //------------------------------------------------------------------------------
-procedure TDMTestPlugIn.DoAction(const Cmd, Params: string);
+procedure TDMTestPlugIn.DoAction(const Owner, Cmd, Params: string);
 var
   Answer: string;
   Lst: TStringList;
   i: integer;
 begin
+  Answer:='';
+  if SameText(Cmd, cmdSendBanner) then
+    Answer := tknBanner;
   if SameText(Cmd, 'help') then
-    TranslateMsg('Расширенные комманды: starturl <url>, addurl <url>, ls [State], start <ID>, stop <ID>, info <ID>; Остальные комманды стандартные')
+    TranslateMsg(Owner, 'Расширенные комманды: starturl <url>, addurl <url>, ls [State], start <ID>, stop <ID>, info <ID>; Остальные комманды стандартные')
   else if SameText(Cmd, 'starturl') then
     Answer := myIDmInterface.DoAction('AddingURL', '<url>' + Params +
       '</url> <hidden>1</hidden>')
@@ -192,11 +243,14 @@ begin
   end else if SameText(Cmd, 'info') then
     Answer := GetInfo(Params)
   }
+  ;
+  {
   else
-    Answer := myIDmInterface.DoAction(Cmd, Params);
+    Answer := myIDmInterface.DoAction(Cmd, Params);}
 
-  if Length(Answer) > 0 then TranslateMsg(Answer);
+  if Length(Answer) > 0 then TranslateMsg(Owner, Answer);
 end;
+*)
 (*
 //------------------------------------------------------------------------------
 function TDMTestPlugIn.GetInfo(DownloadId: string): string;
@@ -238,16 +292,19 @@ begin
 
   //получаем папку с плагинами
   PluginsPath:=IncludeTrailingPathDelimiter(myIDmInterface.DoAction('GetPluginDir', ''));
-  //создаём настройки
-  DefineSettings;
-  //читаем настройки
-  if not LoadSettings then
-    PluginConfigure(sNoCancel);
   //создаем мутексы
   DLInfoMutexCreate;
   CommandsMutexCreate;
-  //создаем сервер и запускаем его
-  SocketServerStart(ClientConnect);
+  //создаём потоки
+  IncomingThreadStart(DoAnyAction);
+  SendThreadStart;
+  //создаём настройки
+  DefineSettings;
+  //читаем настройки
+  if LoadSettings then
+    SettingsReady
+  else
+    PluginConfigure(sNoCancel);
 end;
 //------------------------------------------------------------------------------
 procedure TDMTestPlugIn.BeforeUnload;
@@ -262,8 +319,13 @@ begin
   CommandsMutexFree;
   //убиваем настройки
   SettingsFree;
-  //убиваем сервер
-  SocketServerFree;
+  //убиваем серверы
+  SocketServerFree(WSSExternal);
+  SocketServerFree(WSSRemote);
+  SocketServerFree(WSSLocal);
+  //убиваем потоки
+  SendThreadFree;
+  IncomingThreadFree;
 end;
 //------------------------------------------------------------------------------
 procedure TDMTestPlugIn.PluginConfigure(params: WideString);//вызов окна конфигурации плагина
@@ -333,9 +395,20 @@ procedure TDMTestPlugIn.DefineSettings;
 begin
  SettingsFree;
  Settings:=TStringsSettings.Create;
- Settings.AddAnyValue(sConnection, varInteger, iConnLocal, iConnLocal, iConnRemote, sSettings);
- Settings.AddAnyValue(sPort, varWord, Port_Default, 0, MaxWord, sSettings);
+ Settings.AddAnyValue(sConnection, varInteger, iConnLocal, 0, iConnLocal or iConnRemote or iConnExternal, sSettings);
+ Settings.AddAnyValue(sPortLoc, varWord, Port_Default, 0, MaxWord, sSettings);
+ Settings.AddAnyValue(sPortRem, varWord, Port_Default, 0, MaxWord, sSettings);
+ Settings.AddAnyValue(sPortExt, varWord, Port_Default, 0, MaxWord, sSettings);
  Settings.AddGroup(sIPList, 0, 100, varString, '', Null, Null, sSettings, sIPList);
+ //external IP settings
+ Settings.AddAnyValue(sEIPURL, varString, '', Null, Null, ssEIP, true);
+ Settings.AddAnyValue(sEIPPrefix, varString, '', Null, Null, ssEIP, true);
+ Settings.AddAnyValue(sEIPProxy, varString, '', Null, Null, ssEIP, true);
+ Settings.AddAnyValue(sEIPPort, varWord, EIPPort_Default, 0, MaxWord, ssEIP, true);
+ Settings.AddAnyValue(sEIPAuth, varBoolean, false, Null, Null, ssEIP, true);
+ Settings.AddAnyValue(sEIPUser, varString, '', Null, Null, ssEIP, true);
+ Settings.AddAnyValue(sEIPPass, varString, '', Null, Null, ssEIP, true);
+
 end;
 //------------------------------------------------------------------------------
 function TDMTestPlugIn.LoadSettings: Boolean;
@@ -346,6 +419,7 @@ end;
 procedure TDMTestPlugIn.SaveSettings;
 begin
  Settings.SaveValuesToIni(PluginsPath+IniFileName);
+ SettingsReady;
 end;
 //------------------------------------------------------------------------------
 procedure TDMTestPlugIn.FormClosed(ModalResult: TModalResult = mrNone);
@@ -386,6 +460,45 @@ begin
     end;
    ReleaseMutex(Mutex_DLInfo);
   end;
+end;
+//------------------------------------------------------------------------------
+procedure TDMTestPlugIn.DoServers;
+begin
+ if (Settings[sConnection] and iConnLocal)>0 then
+  try
+   SocketServerStart(WSSLocal, ClientConnect)
+  except
+   on E: Exception do MessageBox(0, PChar(E.Message), myPluginName, MB_OK or MB_ICONERROR);
+  end
+ else
+   SocketServerFree(WSSLocal);
+ if (Settings[sConnection] and iConnRemote)>0 then
+  try
+   SocketServerStart(WSSRemote, ClientConnect)
+  except
+   on E: Exception do MessageBox(0, PChar(E.Message), myPluginName, MB_OK or MB_ICONERROR);
+  end
+ else
+   SocketServerFree(WSSRemote);
+ if (Settings[sConnection] and iConnExternal)>0 then
+  try
+   SocketServerStart(WSSExternal, ClientConnect)
+  except
+   on E: Exception do MessageBox(0, PChar(E.Message), myPluginName, MB_OK or MB_ICONERROR);
+  end
+ else
+   SocketServerFree(WSSExternal);
+end;
+//------------------------------------------------------------------------------
+procedure TDMTestPlugIn.SettingsReady;
+begin
+ //here is a list of operations to do when settings are loaded or changed
+ DoServers;
+end;
+//------------------------------------------------------------------------------
+function TDMTestPlugIn.DoAnyAction(const Cmd, Params: String): String;
+begin
+ Result:=myIDmInterface.DoAction(Cmd, Params);
 end;
 //------------------------------------------------------------------------------
 
