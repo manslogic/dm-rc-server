@@ -48,42 +48,24 @@ uses
  DM_RC_Svr_Tokens,
  DM_RC_Svr_Settings,
  DM_RC_Svr_ExternalIP,
- Tokens;
-
-//const
- //mutex name for multithreading
- //DMRC_SendQueue_MutexName = 'DMRemoteControlSendQueue';
+ Tokens,
+ Wizard;
 
 var
  CS_SndQ: TRTLCriticalSection;
  //messages to send is encoded as <srv>server</srv><cli>client</cli><cmd>text</cmd>
  SendQueue: TStrings = nil;
- //Mutex_SendQueue: THandle = 0;
  SendThread: TSendThread = nil;
 
 { Common stuff }
 
 procedure SendQueueMutexCreate;
 begin
- {
- Mutex_SendQueue := CreateMutex(NIL, FALSE, DMRC_SendQueue_MutexName);
- if Mutex_SendQueue = 0 then
-   RaiseLastOSError;
- }
  InitializeCriticalSection(CS_SndQ);
 end;
 
 procedure SendQueueMutexFree;
 begin
- {
- if Mutex_SendQueue<>0 then
-  begin
-   if CloseHandle(Mutex_SendQueue) then
-     Mutex_SendQueue:=0
-   else
-     RaiseLastOSError;
-  end;
- }
  DeleteCriticalSection(CS_SndQ);
 end;
 
@@ -124,10 +106,8 @@ end;
 procedure AddToSendQueue(const Owner, Msg: String);
 begin
  //MessageBox(0, PChar('Adding '+Msg+' ...'), 'Sender', MB_OK or MB_ICONWARNING); //debug
- //WaitForSingleObject(Mutex_SendQueue, INFINITE);
  EnterCriticalSection(CS_SndQ);
  SendQueue.Add(Owner+EncodeToken(tknCmd, Msg));
- //ReleaseMutex(Mutex_SendQueue);
  LeaveCriticalSection(CS_SndQ);
  //MessageBox(0, 'Done.', 'Sender', MB_OK or MB_ICONWARNING); //debug
 end;
@@ -210,23 +190,22 @@ procedure TSendThread.Execute;
  var
   i: Integer;
   WSS: TWSocketServer;
-  Cmd, Srv, Cli, Txt: String;
+  CmdOwner, Cmd, Srv, Cli, Txt: String;
   NeedClose: Boolean;
 begin
  while not Terminated do
   begin
    if Assigned(SendQueue) then
     begin
+     EnterCriticalSection(CS_SndQ);
      if SendQueue.Count>0 then
       begin
        //FIFO
-       //WaitForSingleObject(Mutex_SendQueue, INFINITE);
-       EnterCriticalSection(CS_SndQ);
        Cmd:=SendQueue[0];
        SendQueue.Delete(0);
-       //ReleaseMutex(Mutex_SendQueue);
        LeaveCriticalSection(CS_SndQ);
        //get message text
+       //MessageBox(0, PChar('['+Cmd+']'), 'Sender', MB_OK or MB_ICONWARNING); //debug
        Txt:=ExtractToken(tknCmd, Cmd);
        //lookup for server
        Srv:=ExtractToken(tknSrv, Cmd);
@@ -255,11 +234,17 @@ begin
             end;
           end;
          }
+         CmdOwner:=CommandOwner(Cmd);
          i:=StrToIntDef(Cli, -1);
          if (i>=0) and (i<WSS.ClientCount) then
           begin
            //MessageBox(0, PChar('['+Txt+']'), 'Sender', MB_OK or MB_ICONWARNING); //debug
-           (WSS.Client[i] as TWSocketClient).SendStr(Txt+CRLF);
+           if NeedClose then //take care about browser
+             ReplaceEx(Txt, InternalLineSep, '<br>');
+           if CmdOwner='' then //clear text answer
+             (WSS.Client[i] as TWSocketClient).SendStr(Txt+CRLF)
+           else //XML encoded answer
+             (WSS.Client[i] as TWSocketClient).SendStr(CmdOwner+EncodeToken(tknCmd, Txt)+CRLF);
            if NeedClose then
              (WSS.Client[i] as TWSocketClient).Close;
           end;
@@ -267,7 +252,11 @@ begin
        Sleep(100); //small pause to have a rest ;)
       end
      else
+      begin
+       LeaveCriticalSection(CS_SndQ);
+       Sleep(100);
        Suspend; //no items in queue
+      end;
     end
    else
      Suspend; //no queue

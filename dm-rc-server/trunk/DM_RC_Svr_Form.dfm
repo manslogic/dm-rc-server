@@ -817,7 +817,7 @@ object CfgForm: TCfgForm
       Caption = 'General'
       object Label1: TLabel
         Left = 168
-        Top = 0
+        Top = 40
         Width = 52
         Height = 13
         Caption = 'Connected'
@@ -834,7 +834,7 @@ object CfgForm: TCfgForm
       end
       object LB_Connected: TListBox
         Left = 168
-        Top = 16
+        Top = 56
         Width = 145
         Height = 137
         ItemHeight = 13
@@ -842,7 +842,7 @@ object CfgForm: TCfgForm
       end
       object Button2: TButton
         Left = 200
-        Top = 160
+        Top = 200
         Width = 75
         Height = 25
         Caption = 'Refresh'
@@ -933,6 +933,14 @@ object CfgForm: TCfgForm
           OnClick = Button3Click
         end
       end
+      object CB_DMAPI: TCheckBox
+        Left = 152
+        Top = 8
+        Width = 161
+        Height = 17
+        Caption = 'Enable direct DM API calls'
+        TabOrder = 5
+      end
     end
     object TS2: TTabSheet
       Caption = 'External IP'
@@ -1008,6 +1016,10 @@ object CfgForm: TCfgForm
         Enabled = False
         TabOrder = 6
       end
+    end
+    object TS3: TTabSheet
+      Caption = 'Users'
+      ImageIndex = 2
     end
   end
   object BitBtn1: TBitBtn

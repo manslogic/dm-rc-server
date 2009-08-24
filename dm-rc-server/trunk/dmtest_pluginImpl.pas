@@ -61,8 +61,6 @@ type
       //procedure DoAction(const Owner, Cmd, Params: string);//обработка комманд
       //function GetInfo(DownloadId: string): string;
       //function GetShortInfo(DownloadId: string): string;
-      //
-      procedure UpdateDLInfo(Mode: Integer = 3); //обновление списка данных закачек
       //команда кодирована как <srv>сервер</srv><cli>адрес клиента</cli><cmd>команда</cmd>
       //procedure ProcessSingleCommand(Command: String); //обработка одной строки-команды
       function DoAnyAction(const Cmd, Params: String): String;
@@ -81,6 +79,8 @@ uses
  DMAPI,
  DM_RC_Svr_Defines,
  DM_RC_Svr_Settings,
+ DM_RC_Svr_Users,
+ DM_RC_Svr_DLInfo,
  DM_RC_Svr_Form,
  DM_RC_Svr_Commands,
  DM_RC_Svr_Tokens,
@@ -135,29 +135,10 @@ procedure TDMTestPlugIn.ClientDataAvailable(Sender: TObject; Error: Word);
 var
   RcvdLine: string;
   IndStart: integer;
-  //Cmd, Params: string;
-  Srv, Cli: String;
+  Srv, Cli, CmdOwner, Cmd: String;
 begin
   with Sender as TWSocketClient do
   begin
-    (*
-    { We use line mode. We will receive complete lines }
-    RcvdLine := ReceiveStr;
-    { Remove trailing CR/LF }
-    while (Length(RcvdLine) > 0) and
-          (RcvdLine[Length(RcvdLine)] in [#13, #10]) do
-      RcvdLine := Copy(RcvdLine, 1, Length(RcvdLine) - 1);
-
-    IndStart := AnsiPos(' ', RcvdLine);
-    if IndStart = 0 then IndStart := length(RcvdLine) + 1;
-
-    Cmd    := copy(RcvdLine, 0, IndStart-1);
-    Params := copy(RcvdLine, IndStart+1, length(RcvdLine));
-    DoAction(Cmd, Params);
-
-    //RcvdLine := myIDmInterface.DoAction(Cmd, Params);
-    //if Length(RcvdLine) > 0 then TranslateMsg(RcvdLine);
-    *)
     RcvdLine := ReceiveStr;
     //MessageBox(0, PChar('['+RcvdLine+']'), myPluginName, MB_OK or MB_ICONINFORMATION); //debug
     //Cli := PeerAddr;
@@ -170,12 +151,28 @@ begin
     if (Server as TWSocketServer) = WSSExternal then
       Srv := sSrvExt;
     //MessageBox(0, PChar(Srv+' '+Cli), myPluginName, MB_OK or MB_ICONINFORMATION); //debug
-    for IndStart:=1 to WordCount(RcvdLine, CRLFSet) do
+    CmdOwner:=EncodeToken(tknSrv, Srv)+EncodeToken(tknCli, Cli);
+    if TokenExist(tknCmd, RcvdLine) then
      begin
-      //ProcessSingleCommand(EncodeToken(tknSrv, Srv)+EncodeToken(tknCli, Cli)+EncodeToken(tknCmd, ExtractWord(IndStart, RcvdLine, CRLFSet)));
-      AddToIncomingQueue(EncodeToken(tknSrv, Srv)+EncodeToken(tknCli, Cli), ExtractWord(IndStart, RcvdLine, CRLFSet));
-      IncomingThreadResume;
-     end;
+      //XML encoded command
+      CmdOwner:=CmdOwner+CommandOwner(RcvdLine);
+      Cmd:=ExtractToken(tknCmd, RcvdLine);
+      for IndStart:=1 to WordCount(Cmd, CRLFZSet) do
+       begin
+        AddToIncomingQueue(CmdOwner, ExtractWord(IndStart, Cmd, CRLFZSet));
+        IncomingThreadResume;
+       end;
+     end
+    else
+     begin
+      //direct/clean command
+      for IndStart:=1 to WordCount(RcvdLine, CRLFSet) do
+       begin
+        //ProcessSingleCommand(EncodeToken(tknSrv, Srv)+EncodeToken(tknCli, Cli)+EncodeToken(tknCmd, ExtractWord(IndStart, RcvdLine, CRLFSet)));
+        AddToIncomingQueue(CmdOwner, ExtractWord(IndStart, RcvdLine, CRLFSet));
+        IncomingThreadResume;
+       end;
+      end;
   end;
 end;
 (*
@@ -293,11 +290,13 @@ begin
   //получаем папку с плагинами
   PluginsPath:=IncludeTrailingPathDelimiter(myIDmInterface.DoAction('GetPluginDir', ''));
   //создаем мутексы
-  DLInfoMutexCreate;
-  CommandsMutexCreate;
+  DLInfoCreate;
+  //CommandsMutexCreate;
   //создаём потоки
   IncomingThreadStart(DoAnyAction);
   SendThreadStart;
+  //создаём пользователей
+  UsersCreate;
   //создаём настройки
   DefineSettings;
   //читаем настройки
@@ -315,8 +314,9 @@ begin
   //убиваем инфо закачек
   DLInfoFree;
   //убиваем мутексы
-  DLInfoMutexFree;
-  CommandsMutexFree;
+  //CommandsMutexFree;
+  //убиваем пользователей
+  UsersFree;
   //убиваем настройки
   SettingsFree;
   //убиваем серверы
@@ -362,6 +362,8 @@ begin
         //читаем настройки из формы и убиваем её
         FormClosed(CfgForm.ModalResult);
      end;
+    //обновляем инфу о закачках
+    UpdateDLInfo(myIDmInterface, dsAll);
    end;
 
   if AnsiStartsText('dm_download', eventType) then
@@ -395,20 +397,22 @@ procedure TDMTestPlugIn.DefineSettings;
 begin
  SettingsFree;
  Settings:=TStringsSettings.Create;
- Settings.AddAnyValue(sConnection, varInteger, iConnLocal, 0, iConnLocal or iConnRemote or iConnExternal, sSettings);
- Settings.AddAnyValue(sPortLoc, varWord, Port_Default, 0, MaxWord, sSettings);
- Settings.AddAnyValue(sPortRem, varWord, Port_Default, 0, MaxWord, sSettings);
- Settings.AddAnyValue(sPortExt, varWord, Port_Default, 0, MaxWord, sSettings);
- Settings.AddGroup(sIPList, 0, 100, varString, '', Null, Null, sSettings, sIPList);
+ Settings.AddAnyValue(sConnection, varInteger, iConnLocal, 0, iConnLocal or iConnRemote or iConnExternal, ssSettings);
+ Settings.AddAnyValue(sPortLoc, varWord, Port_Default, 0, MaxWord, ssSettings);
+ Settings.AddAnyValue(sPortRem, varWord, Port_Default, 0, MaxWord, ssSettings);
+ Settings.AddAnyValue(sPortExt, varWord, Port_Default, 0, MaxWord, ssSettings);
+ Settings.AddGroup(sIPList, 0, 100, varString, '', Null, Null, ssSettings, sIPList);
+ Settings.AddAnyValue(sDMAPI, varBoolean, false, Null, Null, ssSettings);
  //external IP settings
  Settings.AddAnyValue(sEIPURL, varString, '', Null, Null, ssEIP, true);
  Settings.AddAnyValue(sEIPPrefix, varString, '', Null, Null, ssEIP, true);
- Settings.AddAnyValue(sEIPProxy, varString, '', Null, Null, ssEIP, true);
- Settings.AddAnyValue(sEIPPort, varWord, EIPPort_Default, 0, MaxWord, ssEIP, true);
- Settings.AddAnyValue(sEIPAuth, varBoolean, false, Null, Null, ssEIP, true);
- Settings.AddAnyValue(sEIPUser, varString, '', Null, Null, ssEIP, true);
- Settings.AddAnyValue(sEIPPass, varString, '', Null, Null, ssEIP, true);
-
+ Settings.AddAnyValue(sEIPProxy, varString, '', Null, Null, ssEIP);
+ Settings.AddAnyValue(sEIPPort, varWord, EIPPort_Default, 0, MaxWord, ssEIP);
+ Settings.AddAnyValue(sEIPAuth, varBoolean, false, Null, Null, ssEIP);
+ Settings.AddAnyValue(sEIPUser, varString, '', Null, Null, ssEIP);
+ Settings.AddAnyValue(sEIPPass, varString, '', Null, Null, ssEIP);
+ //users settings
+ Settings.AddGroup(ssUsers, 0, cUsersMax, varString, '', Null, Null, ssSettings, ssUsers, true);
 end;
 //------------------------------------------------------------------------------
 function TDMTestPlugIn.LoadSettings: Boolean;
@@ -433,32 +437,6 @@ begin
      SaveSettings;
     end;
    FreeAndNil(CfgForm);
-  end;
-end;
-//------------------------------------------------------------------------------
-procedure TDMTestPlugIn.UpdateDLInfo(Mode: Integer = 3);
- var
-  i: Integer;
-  s, ID, IDI: String;
-begin
- if Mode=dsAll then
-   s:=myIDmInterface.DoAction('GetDownloadIDsList', '')
- else
-   s:=myIDmInterface.DoAction('GetDownloadIDsList', IntToStr(Mode));
- if s<>'' then
-  begin
-   WaitForSingleObject(Mutex_DLInfo, INFINITE);
-   DLInfo.Clear;
-   for i:=1 to WordCount(s, [' ']) do
-    begin
-     ID:=ExtractWord(i, s, [' ']);
-     if ID<>'' then
-      begin
-       IDI:=myIDmInterface.DoAction('GetDownloadInfoByID', ID);
-       DLInfo.Add(ID+'='+IDI);
-      end;
-    end;
-   ReleaseMutex(Mutex_DLInfo);
   end;
 end;
 //------------------------------------------------------------------------------
@@ -494,6 +472,7 @@ procedure TDMTestPlugIn.SettingsReady;
 begin
  //here is a list of operations to do when settings are loaded or changed
  DoServers;
+ UsersFromSettings(Settings);
 end;
 //------------------------------------------------------------------------------
 function TDMTestPlugIn.DoAnyAction(const Cmd, Params: String): String;

@@ -15,7 +15,6 @@ uses
   Classes,
   dmtest_pluginImpl in 'dmtest_pluginImpl.pas',
   DMPluginIntf in 'DMPluginIntf.pas',
-  splitfns in 'splitfns.pas',
   DM_RC_Svr_Form in 'DM_RC_Svr_Form.pas' {CfgForm},
   DM_RC_Svr_Defines in 'DM_RC_Svr_Defines.pas',
   DM_RC_Svr_Sockets in 'DM_RC_Svr_Sockets.pas',
@@ -27,7 +26,11 @@ uses
   DMSettings in 'DMSettings.pas',
   DMAPI in 'DMAPI.pas',
   DM_RC_Svr_ExternalIP in 'DM_RC_Svr_ExternalIP.pas',
-  DM_RC_Svr_Tokens in 'DM_RC_Svr_Tokens.pas';
+  DM_RC_Svr_Tokens in 'DM_RC_Svr_Tokens.pas',
+  DM_RC_Svr_DLInfo in 'DM_RC_Svr_DLInfo.pas',
+  DMXMLParsers in 'DMXMLParsers.pas',
+  DM_RC_Svr_Web in 'DM_RC_Svr_Web.pas',
+  DM_RC_Svr_Users in 'DM_RC_Svr_Users.pas';
 
 {$R *.res}
 function RegisterPlugIn: IDMPlugIn; stdcall;

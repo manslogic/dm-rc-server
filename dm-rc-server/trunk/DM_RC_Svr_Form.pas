@@ -35,6 +35,8 @@ type
     CB_PortExt: TCheckBox;
     Label2: TLabel;
     Button3: TButton;
+    TS3: TTabSheet;
+    CB_DMAPI: TCheckBox;
     procedure Button1Click(Sender: TObject);
     procedure Button2Click(Sender: TObject);
     procedure FormActivate(Sender: TObject);
@@ -189,6 +191,7 @@ begin
    E_PortRem.Text:=IntToStr(FSettings[sPortRem]);
    E_PortExt.Text:=IntToStr(FSettings[sPortExt]);
    GetLocalIPs;
+   CB_DMAPI.Checked:=FSettings[sDMAPI];
    //
    EIP_Url.Text:=FSettings[sEIPURL];
    EIP_Prefix.Text:=FSettings[sEIPPrefix];
@@ -260,6 +263,7 @@ begin
      if CLB_IP.Checked[i] then
        FSettings.AddValueToGroup(sIPList, CLB_IP.Items[i]);
     end;
+   FSettings[sDMAPI]:=CB_DMAPI.Checked;
    //
    //
    FSettings[sEIPURL]:=EIP_Url.Text;
