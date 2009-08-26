@@ -11,29 +11,26 @@ begin
   end;
 end;
 }
-function GetContactUID(hContact: THandle; const Proto: String): String;
+function GetContactUID(hContact: THandle; const szProto: PAnsiChar): String;
  var
   uid:pAnsiChar;
   //cws:TDBVARIANT;
+  dw: DWord;
 begin
- uid:=PAnsiChar(CallProtoService(PAnsiChar(Proto), PS_GETCAPS, PFLAG_UNIQUEIDSETTING, 0));
- {
- if DBReadSetting(hContact,proto,uid,@cws)=0 then
-   begin
-    StrCopy(p,opt_cuid);
-    DBWriteSetting(0,opt_actions,section,@cws);
-    DBFreeVariant(@cws);
-    result:=1;
-   end;
- }
- Result:=DBReadString(hContact, piShortName, uid);
+ uid:=PAnsiChar(CallProtoService(szProto, PS_GETCAPS, PFLAG_UNIQUEIDSETTING, 0));
+ dw:=DWord(CallProtoService(szProto, PS_GETCAPS, PFLAGNUM_1, 0));
+ //messagebox(0, PChar(IntToStr(dw)), szProto, MB_OK or MB_ICONINFORMATION);
+ if ((dw and PF1_NUMERICUSERID)>0) or (SameText(uid, 'UIN')) then
+   Result:=IntToStr(DBReadDWord(hContact, szProto, uid))
+ else
+   Result:=StrPas(DBReadString(hContact, szProto, uid));
 end;
 
 function OnFilterAdd(wParam:WPARAM;lParam:LPARAM):int; cdecl;
  var
   hContact: THandle;
   dbei: TDBEVENTINFO;
-  s: String;
+  s, sb, se: String;
   msg_a: PAnsiChar;
   msg_u: PWideChar;
   MessageStr: tstring;
@@ -45,10 +42,9 @@ begin
  //
  hContact:=THandle(wParam);
  dbei:=TDBEVENTINFO(Pointer(lParam)^);
- //
- s:='';
  // if event is in protocol that is not monitored
  ProtoName:=dbei.szModule;
+ s:='';
  if not ProtoInList(ProtoName, s) then
   begin
    // ...let the event go its way
@@ -91,31 +87,29 @@ begin
     {$endif}
   end;
   //process message
-  s:=DBReadString(0, piShortName, optKWBegin);
+  sb:=DBReadString(0, piShortName, optKWBegin);
+  se:=DBReadString(0, piShortName, optKWEnd);
   ToSend:=false;
   for i:=1 to WordCount(MessageStr, CRLFZSet) do
    begin
     Line:=ExtractWord(i, MessageStr, CRLFZSet);
-    messagebox(0, PChar('['+Line+']'), PChar(ProtoName), MB_OK or MB_ICONINFORMATION);
-    if SameText(Line, s) then
+    //messagebox(0, PChar('['+Line+']'), PChar(ProtoName), MB_OK or MB_ICONINFORMATION);
+    if not ToSend and SameText(Line, sb) then
      begin
-      if ToSend then
-       begin
-        ToSend:=false;
-        s:=DBReadString(0, piShortName, optKWBegin);
-       end
-      else
-       begin
-        ToSend:=true;
-        s:=DBReadString(0, piShortName, optKWEnd);
-       end;
+      ToSend:=true;
+      Continue;
+     end;
+    if ToSend and SameText(Line, se) then
+     begin
+      ToSend:=false;
       Continue;
      end;
     //messagebox(0, PChar(BoolToStr(ToSend, true)), PChar(ProtoName), MB_OK or MB_ICONINFORMATION);
     if ToSend then
      begin
-      messagebox(0, PChar('['+Line+']'), 'We got a message!!!', MB_OK or MB_ICONWARNING);
-      ClientSend(EncodeToken(tknID, GetContactUID(hContact, ProtoName))+EncodeToken(tknProto, ProtoName)+EncodeToken(tknCmd, Line));
+      s:=GetContactUID(hContact, PChar(ProtoName));
+      //messagebox(0, PChar('['+Line+']'), PChar(s), MB_OK or MB_ICONWARNING);
+      ClientSend(EncodeToken(tknID, s)+EncodeToken(tknProto, ProtoName)+EncodeToken(tknCmd, Line));
      end;
    end;
 

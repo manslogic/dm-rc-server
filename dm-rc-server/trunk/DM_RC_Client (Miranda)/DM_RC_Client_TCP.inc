@@ -8,8 +8,17 @@ type
     constructor Create; reintroduce;
   end;
 
+const
+ TxtPrefix = 'DM RC Answer:'#0;
+ TxtLength = 3000;
+
 var
   WSClient: TMyWSocketClient = nil;
+
+function IsContactProto(hContact: THandle; const szProto: PAnsiChar): int;
+begin
+ Result := PluginLink^.CallService(MS_PROTO_ISPROTOONCONTACT, wParam(hContact), lParam(szProto));
+end;
 
 { TMyWSocketClient }
 
@@ -23,8 +32,10 @@ end;
 
 procedure TMyWSocketClient.DataAvailable(Sender: TObject; ErrCode: Word);
  var
-  Rcv, Data, Txt, Line, opt: String;
-  i: Integer;
+  Rcv, Data, Line, uID, cID, Proto: String;
+  Txt: WideString;
+  //TxtChar: array [0..TxtLength-1] of Char;
+  i, wc: Integer;
   hContact: THandle;
   ci: TCONTACTINFO;
 begin
@@ -82,8 +93,13 @@ begin
       else
        begin
         //clean data
-        FBuffer:=Rcv;
-        FDataReady:=true;
+        if FBuffer='' then
+         begin
+          FBuffer:=Rcv;
+          FDataReady:=true;
+         end
+        else
+          FBuffer:=FBuffer+Rcv;
        end;
      end;
    end;
@@ -93,32 +109,86 @@ begin
     FDataReady:=false;
     FBuffer:='';
    end;
-  MessageBox(0, PChar(Data), 'Answer', MB_OK or MB_ICONINFORMATION);
+  //MessageBox(0, PChar(Data), 'Answer', MB_OK or MB_ICONINFORMATION);
   if TokenExist(tknCmd, Data) then
    begin
-    Txt:=ExtractToken(tknCmd, Data);
-    FillChar(ci, SizeOf(TCONTACTINFO), #0);
-    ci.cbSize:=SizeOf(TCONTACTINFO);
-    opt:=ExtractToken(tknProto, Data);
-    MessageBox(0, PChar(opt), 'User Proto', MB_OK or MB_ICONINFORMATION);
-    ci.szProto:=PChar(opt);
-    ci.dwFlag:=CNF_UNIQUEID;
-    opt:=ExtractToken(tknID, Data);
-    MessageBox(0, PChar(opt), 'User ID', MB_OK or MB_ICONINFORMATION);
-    ci.retval.szVal:=TChar(opt);
-    PluginLink^.CallService(MS_CONTACT_GETCONTACTINFO, 0, DWORD(@ci));
-    MessageBox(0, PChar(IntToStr(ci.hContact)), 'User Handle', MB_OK or MB_ICONINFORMATION);
+    Txt:=TxtPrefix+ExtractToken(tknCmd, Data);
+    Proto:=ExtractToken(tknProto, Data);
+    uID:=ExtractToken(tknID, Data);
    end
   else
-    Txt:=Data;
-  {
-  for i:=1 to WordCount(Txt, CRLFZSet) do
    begin
-    //process received answers
-    Line:=ExtractWord(i, Txt, CRLFZSet);
-    MessageBox(0, PChar(Line), 'Message', MB_OK or MB_ICONINFORMATION);
+    Txt:=Data;
+    if TokenExist(tknID, Txt) then
+     begin
+      uID:=ExtractToken(tknID, Txt);
+      DeleteToken(tknID, Txt);
+     end
+    else
+      uID:='';
+    if TokenExist(tknProto, Txt) then
+     begin
+      Proto:=ExtractToken(tknProto, Txt);
+      DeleteToken(tknProto, Txt);
+     end
+    else
+      Proto:='';
    end;
-  }
+  //MessageBox(0, PChar(uID+#13+Proto), 'User Data', MB_OK or MB_ICONINFORMATION);
+  if (uID<>'') and (Proto<>'') then
+   begin
+    hContact := pluginLink^.CallService(MS_DB_CONTACT_FINDFIRST, 0, 0);
+    while hContact <> 0 do
+     begin
+      if IsContactProto(hContact, PChar(Proto)) = -1 Then
+       begin
+        cID:=GetContactUID(hContact, PChar(Proto));
+        //MessageBox(0, PChar(uID+#13+cID), 'Compare ID', MB_OK or MB_ICONQUESTION);
+        if SameText(uID, cID) then
+         begin
+          //send message
+          //MessageBox(0, PChar('Right ID '+cID+' !'), 'Compare ID', MB_OK or MB_ICONINFORMATION);
+          {
+          FillChar(TxtChar, TxtLength, #0);
+          StrPCopy(TxtChar, Txt);
+          CallContactService(hContact, PSS_MESSAGE, PREF_CREATEREAD, DWORD(@TxtChar));
+          }
+          {
+          for i:=1 to WordCount(Txt, CRLFZSet) do
+           begin
+            //process received answers
+            Line:=ExtractWord(i, Txt, CRLFZSet);
+            CallContactService(hContact, PSS_MESSAGE, 0, DWORD(@Line[1]));
+            Sleep(10);
+           end;
+           }
+          Line:='';
+          i:=1;
+          wc:=WordCount(Txt, CRLFZSet);
+          repeat
+           if Length(Line)<TxtLength then
+            begin
+             if Line='' then
+               Line:=ExtractWord(i, Txt, CRLFZSet)
+             else
+               Line:=Line+CRLF+ExtractWord(i, Txt, CRLFZSet);
+            end
+           else
+            begin
+             //ReplaceEx(Line, #0, CRLF);
+             CallContactService(hContact, PSS_MESSAGE, 0, DWORD(@Line[1]));
+             Line:=ExtractWord(i, Txt, CRLFZSet);
+            end;
+           Inc(i);
+          until i>wc;
+          if Line<>'' then
+            CallContactService(hContact, PSS_MESSAGE, 0, DWORD(@Line[1]));
+          Break;
+         end;
+       end;
+      hContact := pluginLink^.CallService(MS_DB_CONTACT_FINDNEXT, hContact, 0);
+     end;
+   end;
 end;
 
 procedure ClientFree;

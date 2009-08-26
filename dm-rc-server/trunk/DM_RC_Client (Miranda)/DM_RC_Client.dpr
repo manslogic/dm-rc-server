@@ -70,6 +70,9 @@ const
 {$ENDIF}
 
 procedure ClientInit; forward;
+function GetContactUID(hContact: THandle; const szProto: PAnsiChar): String; forward;
+
+{$include api\m_helpers.inc}
 
 {$include DM_RC_Client_Options.inc}
 

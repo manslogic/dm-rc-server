@@ -406,11 +406,11 @@ begin
  //external IP settings
  Settings.AddAnyValue(sEIPURL, varString, '', Null, Null, ssEIP, true);
  Settings.AddAnyValue(sEIPPrefix, varString, '', Null, Null, ssEIP, true);
- Settings.AddAnyValue(sEIPProxy, varString, '', Null, Null, ssEIP);
- Settings.AddAnyValue(sEIPPort, varWord, EIPPort_Default, 0, MaxWord, ssEIP);
- Settings.AddAnyValue(sEIPAuth, varBoolean, false, Null, Null, ssEIP);
- Settings.AddAnyValue(sEIPUser, varString, '', Null, Null, ssEIP);
- Settings.AddAnyValue(sEIPPass, varString, '', Null, Null, ssEIP);
+ Settings.AddAnyValue(sEIPProxy, varString, '', Null, Null, ssEIP, true);
+ Settings.AddAnyValue(sEIPPort, varWord, EIPPort_Default, 0, MaxWord, ssEIP, true);
+ Settings.AddAnyValue(sEIPAuth, varBoolean, false, Null, Null, ssEIP, true);
+ Settings.AddAnyValue(sEIPUser, varString, '', Null, Null, ssEIP, true);
+ Settings.AddAnyValue(sEIPPass, varString, '', Null, Null, ssEIP, true);
  //users settings
  Settings.AddGroup(ssUsers, 0, cUsersMax, varString, '', Null, Null, ssSettings, ssUsers, true);
 end;
