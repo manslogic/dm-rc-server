@@ -5,7 +5,7 @@ interface
 uses
   StringsSettings,
   Windows, Messages, SysUtils, Variants, Classes, Graphics, Controls, Forms,
-  Dialogs, StdCtrls, Buttons, ExtCtrls, ComCtrls, CheckLst;
+  Dialogs, StdCtrls, Buttons, ExtCtrls, ComCtrls, CheckLst, ImgList;
 
 type
   TCfgForm = class(TForm)
@@ -37,6 +37,17 @@ type
     Button3: TButton;
     TS3: TTabSheet;
     CB_DMAPI: TCheckBox;
+    IL: TImageList;
+    LV_Users: TListView;
+    TS4: TTabSheet;
+    RG_Store: TRadioGroup;
+    GB_AustoSave: TGroupBox;
+    Label3: TLabel;
+    Label4: TLabel;
+    CBX_StoreMain: TComboBox;
+    CBX_StoreUser: TComboBox;
+    SB_NewUser: TSpeedButton;
+    SB_DelUser: TSpeedButton;
     procedure Button1Click(Sender: TObject);
     procedure Button2Click(Sender: TObject);
     procedure FormActivate(Sender: TObject);
@@ -49,16 +60,24 @@ type
     procedure EIP_AuthClick(Sender: TObject);
     procedure CB_PortExtClick(Sender: TObject);
     procedure Button3Click(Sender: TObject);
+    procedure SB_NewUserClick(Sender: TObject);
+    procedure SB_DelUserClick(Sender: TObject);
+    procedure LV_UsersClick(Sender: TObject);
+    procedure CB_PortRemClick(Sender: TObject);
   private
     { Private declarations }
     FSettings: TStringsSettings;
+    FUsers: TStrings;
     procedure GetLocalIPs;
     procedure CheckConnection;
     procedure RefreshConnected;
     procedure BitBtnClick(BitBtn: TBitBtn);
     procedure SetSettings(NewSettings: TStringsSettings);
     procedure CheckAuth;
+    procedure CheckRemote;
     procedure CheckExternal;
+    procedure RefreshUsers;
+    procedure CheckUsers;
   public
     { Public declarations }
     property Settings: TStringsSettings read FSettings write SetSettings;
@@ -77,7 +96,10 @@ uses
  OverbyteIcsWSocket,
  OverbyteIcsWSocketS,
  DM_RC_Svr_Sockets,
+ DM_RC_Svr_Tokens,
  DM_RC_Svr_Defines,
+ DM_RC_Svr_Store,
+ DM_RC_Svr_Users,
  DM_RC_Svr_ExternalIP;
 
  {Common stuff}
@@ -165,10 +187,12 @@ end;
 procedure TCfgForm.FormCreate(Sender: TObject);
 begin
  FSettings:=TStringsSettings.Create;
+ FUsers:=TStringList.Create;
 end;
 
 procedure TCfgForm.FormDestroy(Sender: TObject);
 begin
+ FreeAndNil(FUsers);
  FreeAndNil(FSettings);
 end;
 
@@ -181,16 +205,20 @@ begin
   begin
    FSettings.AddStrings(NewSettings);
    //update controls with settings
+   RG_Store.ItemIndex:=FSettings[sStore];
+   CBX_StoreMain.ItemIndex:=FSettings[sDumpMain];
+   CBX_StoreUser.ItemIndex:=FSettings[sDumpUser];
+   //
    i:=FSettings[sConnection];
    CB_PortLoc.Checked:=(i and iConnLocal)>0;
    CB_PortRem.Checked:=(i and iConnRemote)>0;
    CB_PortExt.Checked:=(i and iConnExternal)>0;
    CheckConnection;
+   CheckRemote;
    CheckExternal;
    E_PortLoc.Text:=IntToStr(FSettings[sPortLoc]);
    E_PortRem.Text:=IntToStr(FSettings[sPortRem]);
    E_PortExt.Text:=IntToStr(FSettings[sPortExt]);
-   GetLocalIPs;
    CB_DMAPI.Checked:=FSettings[sDMAPI];
    //
    EIP_Url.Text:=FSettings[sEIPURL];
@@ -201,6 +229,9 @@ begin
    EIP_User.Text:=FSettings[sEIPUser];
    EIP_Pass.Text:=FSettings[sEIPPass];
    CheckAuth;
+   //
+   UsersFromSettings(FSettings, FUsers);
+   RefreshUsers;
   end;
 end;
 
@@ -246,6 +277,10 @@ begin
       end;
     end;
    //modify settings from controls
+   FSettings[sStore]:=RG_Store.ItemIndex;
+   FSettings[sDumpMain]:=CBX_StoreMain.ItemIndex;
+   FSettings[sDumpUser]:=CBX_StoreUser.ItemIndex;
+   //
    i:=0;
    if CB_PortLoc.Checked then
      i:=i or iConnLocal;
@@ -273,6 +308,8 @@ begin
    FSettings[sEIPAuth]:=EIP_Auth.Checked;
    FSettings[sEIPUser]:=EIP_User.Text;
    FSettings[sEIPPass]:=EIP_Pass.Text;
+   //
+   UsersToSettings(FSettings, FUsers);
   end;
 end;
 
@@ -312,6 +349,73 @@ end;
 procedure TCfgForm.Button3Click(Sender: TObject);
 begin
  Label2.Caption:=GetExternalIP(EIP_URL.Text, EIP_Prefix.Text, EIP_Proxy.Text, StrToIntDef(EIP_Port.Text, EIPPort_Default), EIP_User.Text, EIP_Pass.Text);
+end;
+
+procedure TCfgForm.SB_NewUserClick(Sender: TObject);
+ var
+  nID: String;
+begin
+ nID:=InputBox('Add new user ID', 'Please enter new user ID && protocol'+#13+'(example: 111111111'+InternalProtoSep+'ICQ):', '');
+ if nID<>'' then
+  begin
+   if UserIndex(nID, FUsers)<0 then
+     AddUser(nID, utUser, false, FUsers);
+   RefreshUsers;
+  end;
+end;
+
+procedure TCfgForm.CheckUsers;
+begin
+ SB_NewUser.Enabled:=FUsers.Count<cUsersMax;
+ SB_DelUser.Enabled:=LV_Users.ItemIndex>=0;
+end;
+
+procedure TCfgForm.RefreshUsers;
+begin
+ //UsersToILB(ILBUsers, FUsers);
+ UsersToLV(LV_Users, FUsers);
+ CheckUsers;
+end;
+
+procedure TCfgForm.SB_DelUserClick(Sender: TObject);
+ var
+  i: Integer;
+begin
+ i:=LV_Users.ItemIndex;
+ if i>=0 then
+  begin
+   if MessageDlg('Are you sure to delete user '+LV_Users.Items[i].Caption+' ?', mtConfirmation, [mbYes, mbNo], 0)=mrYes then
+    begin
+     FUsers.Delete(i);
+     RefreshUsers;
+    end;
+  end;
+end;
+
+procedure TCfgForm.LV_UsersClick(Sender: TObject);
+begin
+ CheckUsers;
+end;
+
+procedure TCfgForm.CheckRemote;
+ var
+  i: Integer;
+  s: String;
+begin
+ GetLocalIPs;
+ CLB_IP.Enabled:=CB_PortRem.Checked;
+ if CB_PortRem.Checked then
+  begin
+   s:=Settings.Group[sIPList, 0];
+   i:=CLB_IP.Items.IndexOf(s);
+   if i>=0 then
+     CLB_IP.Checked[i]:=true;
+  end;
+end;
+
+procedure TCfgForm.CB_PortRemClick(Sender: TObject);
+begin
+ CheckRemote;
 end;
 
 end.

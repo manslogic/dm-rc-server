@@ -17,12 +17,12 @@ uses
   DMPluginIntf in 'DMPluginIntf.pas',
   DM_RC_Svr_Form in 'DM_RC_Svr_Form.pas' {CfgForm},
   DM_RC_Svr_Defines in 'DM_RC_Svr_Defines.pas',
+  DM_RC_Svr_Store in 'DM_RC_Svr_Store.pas',
   DM_RC_Svr_Sockets in 'DM_RC_Svr_Sockets.pas',
-  DM_RC_Svr_Settings in 'DM_RC_Svr_Settings.pas',
-  StringsSettings in 'StringsSettings.pas',
-  Tokens in 'Tokens.pas',
+  StringsSettings in 'Utils\StringsSettings.pas',
+  Tokens in 'Utils\Tokens.pas',
   DM_RC_Svr_Commands in 'DM_RC_Svr_Commands.pas',
-  Wizard in 'WIZARD.PAS',
+  Wizard in 'Utils\WIZARD.PAS',
   DMSettings in 'DMSettings.pas',
   DMAPI in 'DMAPI.pas',
   DM_RC_Svr_ExternalIP in 'DM_RC_Svr_ExternalIP.pas',
@@ -30,7 +30,9 @@ uses
   DM_RC_Svr_DLInfo in 'DM_RC_Svr_DLInfo.pas',
   DMXMLParsers in 'DMXMLParsers.pas',
   DM_RC_Svr_Web in 'DM_RC_Svr_Web.pas',
-  DM_RC_Svr_Users in 'DM_RC_Svr_Users.pas';
+  DM_RC_Svr_Users in 'DM_RC_Svr_Users.pas',
+  xIniFile in 'Utils\xIniFile.pas',
+  DM_RC_Svr_Controlled in 'DM_RC_Svr_Controlled.pas';
 
 {$R *.res}
 function RegisterPlugIn: IDMPlugIn; stdcall;

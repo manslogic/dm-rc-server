@@ -5,6 +5,7 @@ interface
 uses
  Windows,
  Classes,
+ ComCtrls,
  StringsSettings;
 
 const
@@ -29,8 +30,6 @@ const
  sIDAFStrict = 'IDAFStrict';
 
 var
- //user storage
- Users: TStrings = nil;
  CS_Users: TRTLCriticalSection;
 
 procedure UsersCreate;
@@ -42,8 +41,9 @@ procedure UsersFree;
  }
  {
  Adds user to storage.
- AUser: ID of user (ICQ UIN, JID etc)
- AType: one of imrcu_* except utNotFound
+ AUser: ID of user (ICQ UIN, JID etc) InternalProtoSep Proto (without spaces)
+        Example: 111111111/ICQ
+ AType: one of ut_* except utNotFound
  Update: set to true if u want to update existing user type
  Returns index of user in storage.
  }
@@ -56,9 +56,9 @@ function AddUser(AUser: String; AType: Integer; Update: Boolean = false; List: T
 function UserIndex(AUser: String; List: TStrings = nil): Integer;
  {
  Checks user type.
- AUser: ID of user (ICQ UIN, JID etc)
+ AUser: ID of user (ICQ UIN, JID etc) InternalProtoSep Proto (without spaces)
  AIndex: index in storage
- Returns type as one of imrcu_* or utNotFound if user not exists
+ Returns type as one of ut_* or utNotFound if user not exists
  }
 function GetUserType(AUser: String; List: TStrings = nil): Integer; overload;
 function GetUserType(AIndex: Integer; List: TStrings = nil): Integer; overload;
@@ -71,7 +71,7 @@ procedure SetDumbCount(AUser: String; Count: Integer = 0; List: TStrings = nil);
 procedure SetDumbCount(AIndex: Integer; Count: Integer = 0; List: TStrings = nil); overload;
  {
  Deletes user from storage.
- AUser: ID of user (ICQ UIN, JID etc)
+ AUser: ID of user (ICQ UIN, JID etc) InternalProtoSep Proto (without spaces)
  }
 procedure DeleteUser(AUser: String; List: TStrings = nil);
  {
@@ -82,6 +82,7 @@ procedure GetSuperList(AList: TStrings; List: TStrings = nil);
 //
 procedure SetUsersImageIndexes(iiSupervisor, iiAdmin, iiUser: Integer);
 //procedure UsersToILB(ILB: TJvImageListBox; List: TStrings = nil);
+procedure UsersToLV(LV: TListView; List: TStrings = nil);
 //
 procedure UsersFromSettings(ASettings: TStringsSettings; List: TStrings = nil);
 procedure UsersToSettings(ASettings: TStringsSettings; List: TStrings = nil);
@@ -91,12 +92,16 @@ implementation
 uses
  SysUtils,
  DM_RC_Svr_Tokens,
- Tokens;
+ Tokens,
+ Wizard;
 
 var
- ii_Supervisor: Integer;
- ii_Admin: Integer;
- ii_User: Integer;
+ //user storage
+ Users: TStrings = nil;
+ //
+ ii_Supervisor: Integer = 0;
+ ii_Admin: Integer = 1;
+ ii_User: Integer = 2;
 
 procedure UsersCreate;
 begin
@@ -114,9 +119,9 @@ end;
 
 {
 Users are stored as
-<ID>=<type><proto>
+<ID><InternalProtoSep><proto>=<type>
 In the Settings they are stored in XML string list
-UserX=<id>ID</id><type>Type</type>
+UserX=<id>ID/Proto</id><type>Type</type>
 }
 function AddUser(AUser: String; AType: Integer; Update: Boolean = false; List: TStrings = nil): Integer;
  var
@@ -405,6 +410,40 @@ begin
   end;
 end;
 }
+
+procedure UsersToLV(LV: TListView; List: TStrings = nil);
+ var
+  li: TListItem;
+  i, t: Integer;
+begin
+ if not Assigned(List) then
+   List:=Users;
+ //
+ LV.Items.Clear;
+ if Assigned(List) then
+  begin
+   for i:=0 to List.Count-1 do
+    begin
+     t:=StrToIntDef(List.ValueFromIndex[i], utNoBody) mod DumbCountStart;
+     //MessageBox(0, PChar(IntToStr(t)), 'User type', MB_OK or MB_ICONINFORMATION); //debug
+     if t<utNoBody then
+      begin
+       li:=LV.Items.Add;
+       li.Caption:=ExtractWord(1, List.Names[i], [InternalProtoSep]);
+       li.SubItems.Add(ExtractWord(2, List.Names[i], [InternalProtoSep]));
+       li.ImageIndex:=t;
+       {
+       case t of
+        utSupervisor: li.ImageIndex:=ii_Supervisor;
+        utAdmin: li.ImageIndex:=ii_Admin;
+        utUser: li.ImageIndex:=ii_User;
+        end;
+       }
+      end;
+    end;
+  end;
+end;
+
 procedure UsersFromSettings(ASettings: TStringsSettings; List: TStrings = nil);
  var
   i: Integer;

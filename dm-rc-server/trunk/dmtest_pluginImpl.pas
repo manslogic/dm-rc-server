@@ -19,7 +19,7 @@ const
   myMinNeedAppVersion = '5.0.2';//версия указывается без билда
   //описание плагина. Должно быть представлено на русском и английском языках. Может содержать подробную инструкцию по пользованию плагином.
   myPluginDescription = 'Download Master Remote Control Server';
-  myPluginDescriptionRussian = 'Сервер Download Master Remote Control';
+  myPluginDescriptionRussian = 'Сервер удалённого управления Download Master';
 
 type
   TDMTestPlugIn = class(TInterfacedObject, IDMPlugIn)
@@ -28,7 +28,7 @@ type
       //
       procedure DefineSettings;
       function LoadSettings: Boolean;
-      procedure SaveSettings;
+      procedure SaveSettings(Update: Boolean = true);
       procedure FormClosed(ModalResult: TModalResult = mrNone);
       procedure DoServers;
       procedure SettingsReady;
@@ -78,14 +78,17 @@ uses
  StringsSettings,
  DMAPI,
  DM_RC_Svr_Defines,
- DM_RC_Svr_Settings,
+ DM_RC_Svr_Store,
  DM_RC_Svr_Users,
  DM_RC_Svr_DLInfo,
  DM_RC_Svr_Form,
  DM_RC_Svr_Commands,
+ DM_RC_Svr_Controlled,
  DM_RC_Svr_Tokens,
  DM_RC_Svr_ExternalIP,
+ DMSettings,
  Tokens,
+ xIniFile,
  Wizard;
 
 //------------------------------------------------------------------------------
@@ -285,25 +288,59 @@ end;
 //------------------------------------------------------------------------------
 procedure TDMTestPlugIn.PluginInit(_IDmInterface: IDmInterface);//инициализация плагина и передача интерфейса для доступа к ДМ
 begin
+ try
   myIDmInterface := _IDmInterface;
-
-  //получаем папку с плагинами
+  //получаем необходимые папки и ключи
   PluginsPath:=IncludeTrailingPathDelimiter(myIDmInterface.DoAction('GetPluginDir', ''));
+  IniName:=PluginsPath+'DM_RC_Svr.ini';
+  IDIniName:=PluginsPath+'DM_RC_Svr_ID.ini';
+  IniKey:=sRegPath+'\DM_RC_Svr';
+  IDIniKey:=IniKey+'\ID';
   //создаем мутексы
+  try
   DLInfoCreate;
+  except
+   on E: Exception do
+     MessageBox(0, PChar(E.Message), 'DL info error!', MB_OK or MB_ICONERROR);
+  end;
   //CommandsMutexCreate;
+  CtrldCreate;
+  //создаём пользователей
+  try
+  UsersCreate;
+  except
+   on E: Exception do
+     MessageBox(0, PChar(E.Message), 'Users error!', MB_OK or MB_ICONERROR);
+  end;
   //создаём потоки
+  try
   IncomingThreadStart(DoAnyAction);
   SendThreadStart;
-  //создаём пользователей
-  UsersCreate;
+  except
+   on E: Exception do
+     MessageBox(0, PChar(E.Message), 'Threads error!', MB_OK or MB_ICONERROR);
+  end;
   //создаём настройки
+  try
   DefineSettings;
+  except
+   on E: Exception do
+     MessageBox(0, PChar(E.Message), 'Settings error!', MB_OK or MB_ICONERROR);
+  end;
   //читаем настройки
   if LoadSettings then
+    try
     SettingsReady
+    except
+     on E: Exception do
+       MessageBox(0, PChar(E.Message), 'Settings ready error!', MB_OK or MB_ICONERROR);
+    end
   else
     PluginConfigure(sNoCancel);
+ except
+  on E: Exception do
+    MessageBox(0, PChar(E.Message), 'Initalisation error!', MB_OK or MB_ICONERROR);
+ end;
 end;
 //------------------------------------------------------------------------------
 procedure TDMTestPlugIn.BeforeUnload;
@@ -313,11 +350,18 @@ begin
   CfgFormFree;
   //убиваем инфо закачек
   DLInfoFree;
+  CtrldFree;
   //убиваем мутексы
   //CommandsMutexFree;
   //убиваем пользователей
   UsersFree;
   //убиваем настройки
+  if Settings[sDumpMain]=cTimeExit then
+    SaveSettings(false);
+  xIniFree(SetMain);
+  if Assigned(SetUser) and (Settings[sDumpUser]=cTimeExit) then
+    SetUser.UpdateFile;
+  xIniFree(SetUser);
   SettingsFree;
   //убиваем серверы
   SocketServerFree(WSSExternal);
@@ -345,14 +389,10 @@ begin
 end;
 //------------------------------------------------------------------------------
 function TDMTestPlugIn.EventRaised(eventType: WideString; eventData: WideString): WideString;//вызывается из ДМ-ма при возникновении какого либо события
-var
-  IndStart: integer;
-  ID, State: string;
+ var
+  ID, IDI, URL: string;
+  i, ds: Integer;
 begin
-  IndStart := AnsiPos(' ', eventData);
-  ID       := copy(eventData, 0, IndStart-1);
-  State    := copy(eventData, IndStart+1, length(eventData));
-
   if eventType = 'dm_timer_5' then
    begin
     //проверяем форму на то, что она есть, но закрыта
@@ -364,13 +404,66 @@ begin
      end;
     //обновляем инфу о закачках
     UpdateDLInfo(myIDmInterface, dsAll);
+    //сохраняем настройки, если нужно
+    if Settings[sDumpMain]=cTime05 then
+      SaveSettings(false);
+    if Assigned(SetUser) and (Settings[sDumpUser]=cTime05) then
+      SetUser.UpdateFile;
    end;
-
-  if AnsiStartsText('dm_download', eventType) then
-   {
-    TranslateMsg(Ini.ReadString('Events', eventType, eventType) + ' ' + ID + ' ' +
-      Ini.ReadString('State', State, State));
-    }
+  if eventType = 'dm_timer_10' then
+   begin
+    //
+    if Settings[sDumpMain]=cTime10 then
+      SaveSettings(false);
+    if Assigned(SetUser) and (Settings[sDumpUser]=cTime10) then
+      SetUser.UpdateFile;
+   end;
+  if eventType = 'dm_timer_60' then
+   begin
+    //
+    if Settings[sDumpMain]=cTime60 then
+      SaveSettings(false);
+    if Assigned(SetUser) and (Settings[sDumpUser]=cTime60) then
+      SetUser.UpdateFile;
+   end;
+  {
+  if eventType = 'dm_download_added' then
+   begin
+   end;
+  }
+  if eventType = 'dm_download_state' then
+   begin
+    ID:=ExtractWord(1, eventData, SPCSet);
+    ds:=StrToIntDef(ExtractWord(2, eventData, SPCSet), -1);
+    i:=CtrldIDIndex(ID);
+    case ds of
+     dsDownloaded:
+      begin
+       if i>=0 then
+        begin
+         //delete downloaded
+         DelCtrld(i);
+        end;
+      end;
+     dsDownloading:
+      begin
+       IDI:=myIDmInterface.DoAction('GetDownloadInfoByID', ID);
+       //URL detect
+       if i<0 then
+        begin
+         URL:=ExtractToken(dliURL, IDI);
+         i:=CtrldURLIndex(URL);
+         if i>=0 then
+           RplCtrldURLbyID(URL, ID);
+        end;
+       //
+       if i>=0 then
+        begin
+         //
+        end;
+      end;
+     end;
+   end;
 end;
 //------------------------------------------------------------------------------
 function TDMTestPlugIn.GetEmail: WideString;//получаем инфу о плагине
@@ -397,6 +490,11 @@ procedure TDMTestPlugIn.DefineSettings;
 begin
  SettingsFree;
  Settings:=TStringsSettings.Create;
+ //
+ Settings.AddAnyValue(sStore, varInteger, xitIni, xitIni, xitReg, ssSettings, true, true);
+ Settings.AddAnyValue(sDumpMain, varInteger, cTimeNone, cTimeNone, cTime60, ssSettings);
+ Settings.AddAnyValue(sDumpUser, varInteger, cTimeNone, cTimeNone, cTimeEvery, ssSettings);
+ //
  Settings.AddAnyValue(sConnection, varInteger, iConnLocal, 0, iConnLocal or iConnRemote or iConnExternal, ssSettings);
  Settings.AddAnyValue(sPortLoc, varWord, Port_Default, 0, MaxWord, ssSettings);
  Settings.AddAnyValue(sPortRem, varWord, Port_Default, 0, MaxWord, ssSettings);
@@ -413,17 +511,77 @@ begin
  Settings.AddAnyValue(sEIPPass, varString, '', Null, Null, ssEIP, true);
  //users settings
  Settings.AddGroup(ssUsers, 0, cUsersMax, varString, '', Null, Null, ssSettings, ssUsers, true);
+ //controlled downloads
+ Settings.AddGroup(ssDownloads, 0, cDLMax, varString, '', Null, Null, ssSettings, ssDownloads, true);
 end;
 //------------------------------------------------------------------------------
 function TDMTestPlugIn.LoadSettings: Boolean;
+ var
+  CreateMode: Integer;
 begin
- Result:=Settings.LoadValuesFromIni(PluginsPath+IniFIleName)=vreOK;
+ //Result:=Settings.LoadValuesFromIni(PluginsPath+IniFIleName)=vreOK;
+ Result:=false;
+ try
+ if (not Assigned(SetMain)) or (not Assigned(SetUser)) then
+  begin
+   if FileExists(IniName) then
+     CreateMode:=xitIni
+   else
+    begin
+     if RegistryKeyExists(IniKey) then
+       CreateMode:=xitReg
+     else
+       CreateMode:=xitIni;
+    end;
+   case CreateMode of
+    xitReg:
+     begin
+      SetMain:=TxIniFile.Create(IniKey, xitReg);
+      SetUser:=TxIniFile.Create(IDIniKey, xitReg);
+      Result:=Settings.LoadValuesFromReg(SetMain.Reg)=vreOK;
+      Settings[sStore]:=xitReg;
+     end;
+    else
+     begin
+      SetMain:=TxIniFile.Create(IniName);
+      SetUser:=TxIniFile.Create(IDIniName);
+      Result:=Settings.LoadValuesFromIni(SetMain.Ini)=vreOK;
+      Settings[sStore]:=xitIni;
+     end
+    end;
+  end
+ else
+  begin
+   case Settings[sStore] of
+    xitReg:
+      Result:=Settings.LoadValuesFromReg(SetMain.Reg, IniKey)=vreOK;
+    else
+      Result:=Settings.LoadValuesFromIni(SetMain.Ini)=vreOK;
+    end;
+  end;
+ except
+  on E: Exception do
+    MessageBox(0, PChar(E.Message), 'Settings load error!', MB_OK or MB_ICONERROR);
+ end;
 end;
 //------------------------------------------------------------------------------
-procedure TDMTestPlugIn.SaveSettings;
+procedure TDMTestPlugIn.SaveSettings(Update: Boolean = true);
 begin
- Settings.SaveValuesToIni(PluginsPath+IniFileName);
- SettingsReady;
+ //Settings.SaveValuesToIni(PluginsPath+IniFileName);
+ CtrldToSettings(Settings);
+ try
+ case Settings[sStore] of
+  xitReg:
+    Settings.SaveValuesToReg(SetMain.Reg, IniKey);
+  else
+    Settings.SaveValuesToIni(SetMain.Ini);
+  end;
+ except
+  on E: Exception do
+    MessageBox(0, PChar(E.Message), 'Settings save error!', MB_OK or MB_ICONERROR);
+ end;
+ if Update then
+   SettingsReady;
 end;
 //------------------------------------------------------------------------------
 procedure TDMTestPlugIn.FormClosed(ModalResult: TModalResult = mrNone);
@@ -434,7 +592,7 @@ begin
     begin
      Settings.Clear;
      Settings.AddStrings(CfgForm.Settings);
-     SaveSettings;
+     SaveSettings();
     end;
    FreeAndNil(CfgForm);
   end;
@@ -443,27 +601,35 @@ end;
 procedure TDMTestPlugIn.DoServers;
 begin
  if (Settings[sConnection] and iConnLocal)>0 then
-  try
+  //try
    SocketServerStart(WSSLocal, ClientConnect)
+  {
   except
-   on E: Exception do MessageBox(0, PChar(E.Message), myPluginName, MB_OK or MB_ICONERROR);
+   on E: Exception do MessageBox(0, PChar(E.Message), PChar(myPluginName+' (Local)'), MB_OK or MB_ICONERROR);
   end
+  }
  else
    SocketServerFree(WSSLocal);
+ //
  if (Settings[sConnection] and iConnRemote)>0 then
-  try
+  //try
    SocketServerStart(WSSRemote, ClientConnect)
+  {
   except
-   on E: Exception do MessageBox(0, PChar(E.Message), myPluginName, MB_OK or MB_ICONERROR);
+   on E: Exception do MessageBox(0, PChar(E.Message), PChar(myPluginName+' (Remote)'), MB_OK or MB_ICONERROR);
   end
+  }
  else
    SocketServerFree(WSSRemote);
+ //
  if (Settings[sConnection] and iConnExternal)>0 then
-  try
+  //try
    SocketServerStart(WSSExternal, ClientConnect)
+  {
   except
-   on E: Exception do MessageBox(0, PChar(E.Message), myPluginName, MB_OK or MB_ICONERROR);
+   on E: Exception do MessageBox(0, PChar(E.Message), PChar(myPluginName+' (External)'), MB_OK or MB_ICONERROR);
   end
+  }
  else
    SocketServerFree(WSSExternal);
 end;
@@ -472,7 +638,12 @@ procedure TDMTestPlugIn.SettingsReady;
 begin
  //here is a list of operations to do when settings are loaded or changed
  DoServers;
+ EnterCriticalSection(CS_Users);
  UsersFromSettings(Settings);
+ LeaveCriticalSection(CS_Users);
+ EnterCriticalSection(CS_Ctrld);
+ CtrldFromSettings(Settings);
+ LeaveCriticalSection(CS_Ctrld);
 end;
 //------------------------------------------------------------------------------
 function TDMTestPlugIn.DoAnyAction(const Cmd, Params: String): String;
@@ -480,10 +651,5 @@ begin
  Result:=myIDmInterface.DoAction(Cmd, Params);
 end;
 //------------------------------------------------------------------------------
-
-
-
-
-
 
 end.

@@ -4,6 +4,7 @@ interface
 
 uses
  Classes,
+ DM_RC_Svr_Tokens,
  Wizard;
 
 type
@@ -13,9 +14,10 @@ type
 const
  CRLF = #13#10;
  CRLFSet: TCharSet = [#13, #10];
- InternalLineSep = #0;
  CRLFZSet: TCharSet = [InternalLineSep, #13, #10];
  SPCSet: TCharSet = [' '];
+ AMPSet: TCharSet = ['&'];
+ EQSet: TCharSet = ['='];
 
  IniFileName: string = 'DM_RC_Svr.ini';
 
@@ -23,12 +25,7 @@ const
 
  Port_Default: Word = 10000;
 
- //
- tknCmd = 'cmd';
- tknParam = 'prm';
-
  //settings
- ssSettings = 'Settings';
  sConnection = 'Connection';
  sPortLoc = 'PortLocal';
  sPortRem = 'PortRemote';

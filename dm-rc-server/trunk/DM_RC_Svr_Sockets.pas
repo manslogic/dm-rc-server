@@ -46,7 +46,7 @@ uses
  SysUtils,
  DM_RC_Svr_Defines,
  DM_RC_Svr_Tokens,
- DM_RC_Svr_Settings,
+ DM_RC_Svr_Store,
  DM_RC_Svr_ExternalIP,
  Tokens,
  Wizard;
@@ -86,8 +86,11 @@ end;
 
 procedure SendThreadResume;
 begin
- if SendThread.Suspended then
-   SendThread.Resume;
+ if Assigned(SendThread) then
+  begin
+   if SendThread.Suspended then
+     SendThread.Resume;
+  end;
 end;
 
 procedure SendThreadFree;
@@ -106,9 +109,12 @@ end;
 procedure AddToSendQueue(const Owner, Msg: String);
 begin
  //MessageBox(0, PChar('Adding '+Msg+' ...'), 'Sender', MB_OK or MB_ICONWARNING); //debug
- EnterCriticalSection(CS_SndQ);
- SendQueue.Add(Owner+EncodeToken(tknCmd, Msg));
- LeaveCriticalSection(CS_SndQ);
+ if Assigned(SendQueue) then
+  begin
+   EnterCriticalSection(CS_SndQ);
+   SendQueue.Add(Owner+EncodeToken(tknCmd, Msg));
+   LeaveCriticalSection(CS_SndQ);
+  end;
  //MessageBox(0, 'Done.', 'Sender', MB_OK or MB_ICONWARNING); //debug
 end;
 
@@ -124,7 +130,7 @@ begin
   begin
    //local connection
    WSS.Addr:='127.0.0.1';
-   WSS.Port:=Settings[sPortLoc];
+   WSS.Port:=IntToStr(Settings[sPortLoc])
   end;
  if WSS = WSSRemote then
   begin
@@ -133,7 +139,7 @@ begin
      WSS.Addr:=Settings.Group[sIPList, 0]
    else
      WSS.Addr:='';
-   WSS.Port:=Settings[sPortRem];
+   WSS.Port:=IntToStr(Settings[sPortRem]);
   end;
  if WSS = WSSExternal then
   begin
@@ -142,7 +148,7 @@ begin
    if (WSS.Addr=eieSiteNotFound) or
       (WSS.Addr=eiePrefixNotFound) then
      WSS.Addr:='';
-   WSS.Port:=Settings[sPortExt];
+   WSS.Port:=IntToStr(Settings[sPortExt]);
   end;
  Result:=WSS.Addr<>'';
  if Result then

@@ -63,6 +63,7 @@ uses
  DM_RC_Svr_DLInfo,
  DM_RC_Svr_Web,
  DM_RC_Svr_Users,
+ DM_RC_Svr_Controlled,
  Tokens,
  Wizard;
 
@@ -283,10 +284,29 @@ end;
 function GetNthParameter(LinkParams: String; N: Integer): String;
 begin
  //parameters are separated by '&'
- Result:=ExtractWord(N, LinkParams, ['&']);
+ Result:=ExtractWord(N, LinkParams, AMPSet);
  //name & value are separated by '='
  if Result<>'' then
-   Result:=ExtractWord(2, Result, ['=']);
+   Result:=ExtractWord(2, Result, EQSet);
+end;
+
+function GetParameter(LinkParams: String; Parameter: String): String;
+ var
+  i: Integer;
+  s: String;
+begin
+ Result:='';
+ for i:=1 to WordCount(LinkParams, AMPSet) do
+  begin
+   //parameters are separated by '&'
+   s:=ExtractWord(i, LinkParams, AMPSet);
+   //name & value are separated by '='
+   if ExtractWord(1, s, EQSet) = Parameter then
+    begin
+     Result:=ExtractWord(2, s, EQSet);
+     Break;
+    end;
+  end;
 end;
 
 procedure IncomingQueueMutexCreate;
@@ -315,8 +335,11 @@ end;
 
 procedure IncomingThreadResume;
 begin
- if IncomingThread.Suspended then
-   IncomingThread.Resume;
+ if Assigned(IncomingThread) then
+  begin
+   if IncomingThread.Suspended then
+     IncomingThread.Resume;
+  end;
 end;
 
 procedure IncomingThreadFree;
@@ -334,9 +357,12 @@ end;
 
 procedure AddToIncomingQueue(const CmdOwner, Msg: String);
 begin
- EnterCriticalSection(CS_IncQ);
- IncomingQueue.Add(CmdOwner+EncodeToken(tknCmd, Msg));
- LeaveCriticalSection(CS_IncQ);
+ if Assigned(IncomingQueue) then
+  begin
+   EnterCriticalSection(CS_IncQ);
+   IncomingQueue.Add(CmdOwner+EncodeToken(tknCmd, Msg));
+   LeaveCriticalSection(CS_IncQ);
+  end;
 end;
 
 (*
@@ -419,7 +445,7 @@ begin
        IncomingQueue.Delete(0);
        LeaveCriticalSection(CS_IncQ);
        //recognize command
-       CmdOwner:=CopyToken(tknSrv, Txt)+CopyToken(tknCli, Txt)+CopyToken(tknID, Txt)+CopyToken(tknProto, Txt);
+       CmdOwner:=CopyToken(tknSrv, Txt)+CopyToken(tknCli, Txt)+CommandOwner(Txt);
        CmdText:=ExtractToken(tknCmd, Txt);
        Cmd:=ExtractWord(1, CmdText, SPCSet);
        if Cmd='GET' then
@@ -439,7 +465,9 @@ begin
          Params:=HTTPDecode(ExtractWord(2, Cmd, ['?']));
          Cmd:=ExtractWord(1, Cmd, ['?']);
          //MessageBox(0, PChar(Cmd+' '+Params), 'Incoming', MB_OK or MB_ICONQUESTION); //debug
-        end;
+        end
+       else
+         Params:=Trim(Copy(CmdText, Pos(Cmd, CmdText)+Length(Cmd), Length(CmdText)));
        Answer:='';
        //process "kernel" actions
        //MessageBox(0, PChar(CmdOwner+' >'+Cmd+'<'), 'Incoming', MB_OK or MB_ICONQUESTION); //debug
@@ -490,7 +518,11 @@ begin
              FParams:=GetAddingURLParams(GetNthParameter(Params, 1)+chDefURLDelimiter+GetNthParameter(Params, 2))
            else
              FParams:=GetAddingURLParams(Params);
+           //add URL to download
            DoAction(FCmd, FParams);
+           //add URL to controlled
+           AddCtrldURL(CmdOwnerToUserID(CmdOwner), ExtractToken(dliURL, FParams));
+           //
            if Browser then
              Answer:=webUrlAdded
            else
@@ -500,19 +532,47 @@ begin
         end;
        if SameText(Cmd, 'list') then
         begin
-         //MessageBox(0, 'Before Critical...', 'LIST', MB_OK or MB_ICONQUESTION); //debug
-         EnterCriticalSection(CS_DLInfo);
-         //MessageBox(0, PChar(IntToStr(DLInfo.Count)), 'LIST', MB_OK or MB_ICONQUESTION); //debug
-         for i:=0 to DLInfo.Count-1 do
-          begin
-           if Answer='' then
-            Answer:=DLInfo.Names[i]+' '+ExtractFileName(ExtractToken('saveto', DLInfo.ValueFromIndex[i]))
-           else
-            Answer:=Answer+InternalLineSep+DLInfo.Names[i]+' '+ExtractFileName(ExtractToken('saveto', DLInfo.ValueFromIndex[i]));
-          end;
-         LeaveCriticalSection(CS_DLInfo);
+         FParams:='';
          if Browser then
-           Answer:=Format(webList, [Answer]);
+          begin
+           if Params='' then
+            begin
+             Answer:=webList;
+             FParams:='';
+            end
+           else
+            begin
+             FParams:=GetParameter(Params, dliState);
+            end;
+          end
+         else
+          begin
+           FParams:=Params;
+          end;
+         if FParams='9' then
+           FParams:='';
+         if Answer='' then
+          begin
+           //MessageBox(0, 'Before Critical...', 'LIST', MB_OK or MB_ICONQUESTION); //debug
+           EnterCriticalSection(CS_DLInfo);
+           //MessageBox(0, PChar(IntToStr(DLInfo.Count)), 'LIST', MB_OK or MB_ICONQUESTION); //debug
+           for i:=0 to DLInfo.Count-1 do
+            begin
+             if Answer='' then
+              begin
+               if (FParams='') or (FParams=ExtractToken(dliState, DLInfo.ValueFromIndex[i])) then
+                 Answer:=DLInfo.Names[i]+' '+ExtractFileName(ExtractToken(dliSave, DLInfo.ValueFromIndex[i]));
+              end
+             else
+              begin
+               if (FParams='') or (FParams=ExtractToken(dliState, DLInfo.ValueFromIndex[i])) then
+                 Answer:=Answer+InternalLineSep+DLInfo.Names[i]+' '+ExtractFileName(ExtractToken(dliSave, DLInfo.ValueFromIndex[i]));
+              end;
+            end;
+           LeaveCriticalSection(CS_DLInfo);
+           if Browser then
+             Answer:=Format(webListData, [Answer]);
+          end;
          Unknown:=false;
         end;
        //

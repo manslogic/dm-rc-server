@@ -8,8 +8,29 @@ uses
  DMPluginIntf;
 
 const
+ //XML data tokens
+ dliState = 'state';
+ dliURL = 'url';
+ dliResume = 'resumemode';
+ dliSave = 'saveto';
+ dliSize = 'size';
+ dliDownloaded = 'downloadedsize';
+ dliSpeed = 'speed';
+ dliTime = 'time';
+ dliTimeLeft = 'timeleft';
+ dliDesc = 'description';
+ dliCategory = 'categoryid';
+ dliDate = 'date';
+
  //additional DLInfo modes
  dsAll = 9;
+
+ //time shift
+ DLInfoTimeShift = 5;
+
+ //units of size & speed
+ SizeUnits: array[0..5] of string = (' јвто', ' байт', '  б', ' ћб', ' √б', ' “б');
+ SpeedUnits: array[0..5] of string = (' јвто', ' байт/c', '  б/c', ' ћб/c', ' √б/c', ' “б/c'); //последние две - космические скорост€ ќ_о
 
 var
  //DLInfo is downloads info in form of <id>=<xmldata>
@@ -50,7 +71,7 @@ procedure UpdateDLInfo(const DMI: IDmInterface; Mode: Integer = 3);
   i: Integer;
   s, ID, IDI: String;
 begin
- if Assigned(DMI) then
+ if Assigned(DMI) and Assigned(DLInfo) then
   begin
    if TryEnterCriticalSection(CS_DLInfo) then
     begin
@@ -78,10 +99,13 @@ end;
 
 procedure UpdateDLInfo(const XMLName: String);
 begin
- if TryEnterCriticalSection(CS_DLInfo) then
+ if Assigned(DLInfo) then
   begin
-   ParseXML(XMLName, DLInfo);
-   LeaveCriticalSection(CS_DLInfo);
+   if TryEnterCriticalSection(CS_DLInfo) then
+    begin
+     ParseXML(XMLName, DLInfo);
+     LeaveCriticalSection(CS_DLInfo);
+    end;
   end;
 end;
 
